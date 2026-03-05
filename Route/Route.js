@@ -46,7 +46,6 @@ router.delete('/students/:studentId/installments/:installmentId', requireAuth, r
 // Marks (full object – subjects, exams, config, totals, grades, etc.)
 router.patch('/students/:studentId/marks', requireAuth, requireSchoolAdmin, StudentController.updateMarks);
 
-// module.exports = router;
 
 
 module.exports = router;

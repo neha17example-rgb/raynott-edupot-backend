@@ -153,61 +153,95 @@ class StudentModel {
   }
 
   static async updateInstallment(schoolId, studentId, installmentId, updates) {
-    try {
-      const ref = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
-      const snap = await ref.once('value');
-      const student = snap.val();
-      if (!student) throw new Error('Student not found');
+  try {
+    console.log(`[MODEL] Updating installment ${installmentId} for student ${studentId} in school ${schoolId}`);
+    console.log("  updates:", updates);
 
-      const installments = (student.installments || []).map(inst =>
-        inst.id === installmentId ? { ...inst, ...updates } : inst
-      );
+    const ref = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
+    const snap = await ref.once('value');
+    const student = snap.val();
 
-      const totalPaid = installments.reduce((sum, i) => sum + (i.paid || 0), 0);
-      const pendingAmount = (student.feeStructure?.total || 0) - totalPaid;
-
-      await ref.update({
-        installments,
-        totalPaid,
-        pendingAmount,
-        status: pendingAmount === 0 ? 'completed' : student.status || 'active',
-        updatedAt: admin.database.ServerValue.TIMESTAMP,
-      });
-
-      return { success: true };
-    } catch (err) {
-      console.error('Update installment error:', err);
-      return { success: false, message: err.message };
+    if (!student) {
+      console.log("→ Student not found");
+      throw new Error('Student not found');
     }
+
+    console.log("  Current installments count:", student.installments?.length || 0);
+
+    const installments = (student.installments || []).map(inst =>
+      String(inst.id) === String(installmentId)   // ← very important: string comparison!
+        ? { ...inst, ...updates }
+        : inst
+    );
+
+    console.log("  After update count still:", installments.length);
+
+    const totalPaid = installments.reduce((sum, i) => sum + (i.paid || 0), 0);
+    const pendingAmount = (student.feeStructure?.total || 0) - totalPaid;
+
+    await ref.update({
+      installments,
+      totalPaid,
+      pendingAmount,
+      status: pendingAmount === 0 ? 'completed' : student.status || 'active',
+      updatedAt: admin.database.ServerValue.TIMESTAMP,
+    });
+
+    console.log("→ Update successful");
+    return { success: true };
+  } catch (err) {
+    console.error("[MODEL ERROR]", err);
+    return { success: false, message: err.message };
   }
+}
 
   static async deleteInstallment(schoolId, studentId, installmentId) {
-    try {
-      const ref = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
-      const snap = await ref.once('value');
-      const student = snap.val();
-      if (!student) throw new Error('Student not found');
+  try {
+    console.log(`[MODEL DELETE] student ${studentId} - removing installment ${installmentId}`);
 
-      let installments = (student.installments || []).filter(inst => inst.id !== installmentId);
-      installments = installments.map((inst, idx) => ({ ...inst, number: idx + 1 }));
+    const ref = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
+    const snap = await ref.once('value');
+    const student = snap.val();
 
-      const totalPaid = installments.reduce((sum, i) => sum + (i.paid || 0), 0);
-      const pendingAmount = (student.feeStructure?.total || 0) - totalPaid;
-
-      await ref.update({
-        installments,
-        totalPaid,
-        pendingAmount,
-        status: pendingAmount === 0 ? 'completed' : student.status || 'active',
-        updatedAt: admin.database.ServerValue.TIMESTAMP,
-      });
-
-      return { success: true };
-    } catch (err) {
-      console.error('Delete installment error:', err);
-      return { success: false, message: err.message };
+    if (!student) {
+      console.log("→ Student not found");
+      throw new Error('Student not found');
     }
+
+    const originalCount = student.installments?.length || 0;
+    console.log("  Before delete - count:", originalCount);
+
+    // Very important: convert to string for comparison
+    let installments = (student.installments || []).filter(inst => 
+      String(inst.id) !== String(installmentId)
+    );
+
+    console.log("  After filter - count:", installments.length);
+
+    if (installments.length === originalCount) {
+      console.warn("→ No installment was removed - ID not found");
+    }
+
+    installments = installments.map((inst, idx) => ({ ...inst, number: idx + 1 }));
+
+    const totalPaid = installments.reduce((sum, i) => sum + (i.paid || 0), 0);
+    const pendingAmount = (student.feeStructure?.total || 0) - totalPaid;
+
+    await ref.update({
+      installments,
+      totalPaid,
+      pendingAmount,
+      status: pendingAmount === 0 ? 'completed' : student.status || 'active',
+      updatedAt: admin.database.ServerValue.TIMESTAMP,
+    });
+
+    console.log("→ Delete successful");
+    return { success: true };
+  } catch (err) {
+    console.error("[MODEL DELETE ERROR]", err);
+    return { success: false, message: err.message };
   }
+}
 
   // === Marks (full marks object replace – matches Marks.jsx) ===
   static async updateMarks(schoolId, studentId, marksData) {
