@@ -125,6 +125,63 @@ class StudentController {
 }
 
   // === Marks (full marks object) ===
+  static async getMarks(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || req.user.role !== 'school_admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { studentId } = req.params;
+
+    try {
+      const marks = await StudentModel.getMarks(schoolId, studentId);
+      if (!marks) {
+        return res.status(404).json({ success: false, error: 'Marks not found' });
+      }
+      res.json({ success: true, marks });
+    } catch (err) {
+      res.status(500).json({ success: false, error: 'Failed to fetch marks' });
+    }
+  }
+
+  static async addExam(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || req.user.role !== 'school_admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { studentId } = req.params;
+    const examData = req.body;
+
+    if (!examData.examType) {
+      return res.status(400).json({ success: false, error: 'examType is required' });
+    }
+
+    const result = await StudentModel.addExam(schoolId, studentId, examData);
+    if (result.success) {
+      res.status(201).json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  }
+
+  static async deleteExam(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || req.user.role !== 'school_admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { studentId, examId } = req.params;
+
+    const result = await StudentModel.deleteExam(schoolId, studentId, examId);
+
+    if (result.success) {
+      res.json({ success: true, message: 'Exam deleted' });
+    } else {
+      res.status(400).json(result);
+    }
+  }
+  
   static async updateMarks(req, res) {
     const schoolId = req.user?.schoolId;
     if (!schoolId || req.user.role !== 'school_admin') return res.status(403).json({ error: 'Forbidden' });

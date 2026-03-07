@@ -244,18 +244,126 @@ class StudentModel {
 }
 
   // === Marks (full marks object replace – matches Marks.jsx) ===
-  static async updateMarks(schoolId, studentId, marksData) {
+  
+  static async getMarks(schoolId, studentId) {
     try {
-      await rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`).update({
-        marks: marksData,
-        updatedAt: admin.database.ServerValue.TIMESTAMP,
-      });
-      return { success: true };
+      const snapshot = await rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}/marks`).once('value');
+      const marks = snapshot.val();
+      return marks || null;
     } catch (err) {
-      console.error('Update marks error:', err);
-      return { success: false, message: err.message };
+      console.error('Get marks error:', err);
+      return null;
     }
   }
+
+  /**
+   * Append a new exam to student's marks.exams array
+   * @param {string} schoolId
+   * @param {string} studentId
+   * @param {object} examData – the new exam object (without id – will be generated)
+   */
+  // In StudentModel.js - update the addExam method
+
+static async addExam(schoolId, studentId, examData) {
+  try {
+    const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
+    const snapshot = await studentRef.once('value');
+    const student = snapshot.val();
+
+    if (!student) {
+      throw new Error('Student not found');
+    }
+
+    const currentMarks = student.marks || {};
+    const currentExams = currentMarks.exams || [];
+    
+    const newExam = {
+      id: Date.now().toString(),
+      ...examData,
+      subjects: examData.subjects || [],
+    };
+
+    const updatedExams = [...currentExams, newExam];
+
+    // Instead of using dot notation in the path, create a proper update object
+    const updates = {
+      'marks': {
+        ...currentMarks,
+        exams: updatedExams,
+        updatedAt: admin.database.ServerValue.TIMESTAMP
+      },
+      updatedAt: admin.database.ServerValue.TIMESTAMP
+    };
+
+    // Use set/update without dot notation in paths
+    await studentRef.update(updates);
+
+    return { success: true, exam: newExam };
+  } catch (err) {
+    console.error('Add exam error:', err);
+    return { success: false, message: err.message };
+  }
+}
+
+  // In StudentModel.js - update the deleteExam method
+
+static async deleteExam(schoolId, studentId, examId) {
+  try {
+    const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
+    const snapshot = await studentRef.once('value');
+    const student = snapshot.val();
+
+    if (!student) {
+      throw new Error('Student not found');
+    }
+
+    const currentMarks = student.marks || {};
+    const currentExams = currentMarks.exams || [];
+    const updatedExams = currentExams.filter(exam => String(exam.id) !== String(examId));
+
+    if (updatedExams.length === currentExams.length) {
+      return { success: false, message: 'Exam not found' };
+    }
+
+    const updates = {
+      'marks': {
+        ...currentMarks,
+        exams: updatedExams,
+        updatedAt: admin.database.ServerValue.TIMESTAMP
+      },
+      updatedAt: admin.database.ServerValue.TIMESTAMP
+    };
+
+    await studentRef.update(updates);
+
+    return { success: true };
+  } catch (err) {
+    console.error('Delete exam error:', err);
+    return { success: false, message: err.message };
+  }
+}
+
+  // In StudentModel.js - update the updateMarks method
+
+static async updateMarks(schoolId, studentId, marksData) {
+  try {
+    const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
+    
+    const updates = {
+      'marks': {
+        ...marksData,
+        updatedAt: admin.database.ServerValue.TIMESTAMP
+      },
+      updatedAt: admin.database.ServerValue.TIMESTAMP
+    };
+    
+    await studentRef.update(updates);
+    return { success: true };
+  } catch (err) {
+    console.error('Update marks error:', err);
+    return { success: false, message: err.message };
+  }
+}
 }
 
 module.exports = StudentModel;

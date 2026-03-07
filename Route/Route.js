@@ -43,7 +43,10 @@ router.post('/students/:studentId/installments', requireAuth, requireSchoolAdmin
 router.patch('/students/:studentId/installments/:installmentId', requireAuth, requireSchoolAdmin, StudentController.updateInstallment);
 router.delete('/students/:studentId/installments/:installmentId', requireAuth, requireSchoolAdmin, StudentController.deleteInstallment);
 
-// Marks (full object – subjects, exams, config, totals, grades, etc.)
+// Marks 
+router.get(   '/students/:studentId/marks',       requireAuth, requireSchoolAdmin, StudentController.getMarks);
+router.post(  '/students/:studentId/marks/exams', requireAuth, requireSchoolAdmin, StudentController.addExam);
+router.delete('/students/:studentId/marks/exams/:examId', requireAuth, requireSchoolAdmin, StudentController.deleteExam);
 router.patch('/students/:studentId/marks', requireAuth, requireSchoolAdmin, StudentController.updateMarks);
 
 
