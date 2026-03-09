@@ -25,6 +25,9 @@ const requireSchoolAdmin = (req, res, next) => {
   next();
 };
 
+// GET /students/search
+router.get('/students/search', requireAuth, requireSchoolAdmin, StudentController.searchStudents);
+
 router.post('/schools',requireAuth, requireAdmin, SchoolController.createSchool);
 router.get('/schools',requireAuth, requireAdmin, SchoolController.getAllSchools);
 router.delete('/schools/:schoolId', requireAuth, requireAdmin, SchoolController.deleteSchool);
@@ -48,6 +51,7 @@ router.get(   '/students/:studentId/marks',       requireAuth, requireSchoolAdmi
 router.post(  '/students/:studentId/marks/exams', requireAuth, requireSchoolAdmin, StudentController.addExam);
 router.delete('/students/:studentId/marks/exams/:examId', requireAuth, requireSchoolAdmin, StudentController.deleteExam);
 router.patch('/students/:studentId/marks', requireAuth, requireSchoolAdmin, StudentController.updateMarks);
+
 
 
 

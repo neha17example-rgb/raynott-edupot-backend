@@ -364,6 +364,74 @@ static async updateMarks(schoolId, studentId, marksData) {
     return { success: false, message: err.message };
   }
 }
+/**
+ * Search students by multiple optional criteria
+ * @param {string} schoolId
+ * @param {Object} criteria - { name?, admissionNo?, grade?, section?, fatherName?, motherName?, aadhar?, ... }
+ * @returns {Promise<Array>} matching students
+ */
+static async searchStudents(schoolId, criteria = {}) {
+  try {
+    const ref = rtdb.ref(this.STUDENTS_REF(schoolId));
+    const snapshot = await ref.once('value');
+
+    if (!snapshot.exists()) {
+      return [];
+    }
+
+    const results = [];
+
+    snapshot.forEach(child => {
+      const student = {
+        studentId: child.key,
+        ...child.val()
+      };
+
+      const basic = student.basicInfo || {};
+
+      // Case-insensitive partial match for strings
+      const matchesName = !criteria.name || 
+        basic.name?.toLowerCase().includes(criteria.name.toLowerCase());
+
+      const matchesAdmissionNo = !criteria.admissionNo || 
+        basic.admissionNo === criteria.admissionNo;
+
+      const matchesGrade = !criteria.grade || 
+        basic.grade === criteria.grade;
+
+      const matchesSection = !criteria.section || 
+        basic.section?.toLowerCase() === criteria.section.toLowerCase();
+
+      const matchesFather = !criteria.fatherName || 
+        basic.fatherName?.toLowerCase().includes(criteria.fatherName.toLowerCase());
+
+      const matchesMother = !criteria.motherName || 
+        basic.motherName?.toLowerCase().includes(criteria.motherName.toLowerCase());
+
+      const matchesAadhar = !criteria.aadhar || 
+        basic.aadhar === criteria.aadhar;
+
+      // Add more fields as needed (dob, city, bloodGroup, phone, etc.)
+
+      if (matchesName && matchesAdmissionNo && matchesGrade && 
+          matchesSection && matchesFather && matchesMother && matchesAadhar) {
+        results.push(student);
+      }
+    });
+
+    // Sort by name (optional)
+    results.sort((a, b) => {
+      const nameA = a.basicInfo?.name?.toLowerCase() || '';
+      const nameB = b.basicInfo?.name?.toLowerCase() || '';
+      return nameA.localeCompare(nameB);
+    });
+
+    return results;
+  } catch (err) {
+    console.error('Search students error:', err);
+    throw err;
+  }
+}
 }
 
 module.exports = StudentModel;

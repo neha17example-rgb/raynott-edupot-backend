@@ -189,6 +189,45 @@ class StudentController {
     const result = await StudentModel.updateMarks(schoolId, studentId, req.body);
     res.json(result);
   }
+  /**
+ * Search students by multiple criteria
+ * @route GET /students/search
+ * @access School Admin only
+ */
+static async searchStudents(req, res) {
+  const schoolId = req.user?.schoolId;
+
+  if (!schoolId || req.user.role !== 'school_admin') {
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden: School admin access required'
+    });
+  }
+
+  try {
+    const criteria = req.query; // name, admissionNo, grade, section, fatherName, motherName, aadhar, ...
+
+    // Optional: clean up empty strings
+    Object.keys(criteria).forEach(key => {
+      if (criteria[key] === '') delete criteria[key];
+    });
+
+    const students = await StudentModel.searchStudents(schoolId, criteria);
+
+    return res.json({
+      success: true,
+      students,
+      count: students.length,
+      message: students.length === 0 ? 'No matching students found' : undefined
+    });
+  } catch (err) {
+    console.error('Search students controller error:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to search students'
+    });
+  }
+}
 }
 
 module.exports = StudentController;
