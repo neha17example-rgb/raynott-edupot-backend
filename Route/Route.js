@@ -52,6 +52,15 @@ router.post(  '/students/:studentId/marks/exams', requireAuth, requireSchoolAdmi
 router.delete('/students/:studentId/marks/exams/:examId', requireAuth, requireSchoolAdmin, StudentController.deleteExam);
 router.patch('/students/:studentId/marks', requireAuth, requireSchoolAdmin, StudentController.updateMarks);
 
+// Assessment routes
+router.get('/students/:studentId/assessments', requireAuth, requireSchoolAdmin, StudentController.getAssessments);
+router.post('/students/:studentId/assessments/categories', requireAuth, requireSchoolAdmin, StudentController.addAssessmentCategory);
+router.patch('/students/:studentId/assessments/categories/:categoryId', requireAuth, requireSchoolAdmin, StudentController.updateAssessmentCategory);
+router.delete('/students/:studentId/assessments/categories/:categoryId', requireAuth, requireSchoolAdmin, StudentController.deleteAssessmentCategory);
+router.post('/students/:studentId/assessments/records', requireAuth, requireSchoolAdmin, StudentController.addAssessment);
+router.patch('/students/:studentId/assessments/records/:assessmentId', requireAuth, requireSchoolAdmin, StudentController.updateAssessment);
+router.delete('/students/:studentId/assessments/records/:assessmentId', requireAuth, requireSchoolAdmin, StudentController.deleteAssessment);
+
 
 
 

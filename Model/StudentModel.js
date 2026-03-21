@@ -432,6 +432,255 @@ static async searchStudents(schoolId, criteria = {}) {
     throw err;
   }
 }
+// In StudentModel.js - Add these methods
+
+  // === Assessment Reports ===
+  
+  /**
+   * Get all assessments for a student
+   */
+  static async getAssessments(schoolId, studentId) {
+    try {
+      const snapshot = await rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}/assessments`).once('value');
+      return snapshot.val() || { categories: [], assessments: [] };
+    } catch (err) {
+      console.error('Get assessments error:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Add a new assessment category (e.g., Reading, Writing, Communication)
+   */
+  static async addAssessmentCategory(schoolId, studentId, categoryData) {
+    try {
+      const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
+      const snapshot = await studentRef.once('value');
+      const student = snapshot.val();
+
+      if (!student) {
+        throw new Error('Student not found');
+      }
+
+      const currentAssessments = student.assessments || { categories: [], assessments: [] };
+      const categories = currentAssessments.categories || [];
+      
+      const newCategory = {
+        id: Date.now().toString(),
+        name: categoryData.name,
+        description: categoryData.description || '',
+        weightage: categoryData.weightage || 100,
+        createdAt: admin.database.ServerValue.TIMESTAMP
+      };
+
+      const updatedCategories = [...categories, newCategory];
+
+      const updates = {
+        'assessments': {
+          ...currentAssessments,
+          categories: updatedCategories,
+          updatedAt: admin.database.ServerValue.TIMESTAMP
+        },
+        updatedAt: admin.database.ServerValue.TIMESTAMP
+      };
+
+      await studentRef.update(updates);
+
+      return { success: true, category: newCategory };
+    } catch (err) {
+      console.error('Add assessment category error:', err);
+      return { success: false, message: err.message };
+    }
+  }
+
+  /**
+   * Update an assessment category
+   */
+  static async updateAssessmentCategory(schoolId, studentId, categoryId, updates) {
+    try {
+      const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
+      const snapshot = await studentRef.once('value');
+      const student = snapshot.val();
+
+      if (!student) {
+        throw new Error('Student not found');
+      }
+
+      const currentAssessments = student.assessments || { categories: [], assessments: [] };
+      const categories = (currentAssessments.categories || []).map(cat =>
+        String(cat.id) === String(categoryId) ? { ...cat, ...updates } : cat
+      );
+
+      const updatesObj = {
+        'assessments': {
+          ...currentAssessments,
+          categories,
+          updatedAt: admin.database.ServerValue.TIMESTAMP
+        },
+        updatedAt: admin.database.ServerValue.TIMESTAMP
+      };
+
+      await studentRef.update(updatesObj);
+
+      return { success: true };
+    } catch (err) {
+      console.error('Update assessment category error:', err);
+      return { success: false, message: err.message };
+    }
+  }
+
+  /**
+   * Delete an assessment category
+   */
+  static async deleteAssessmentCategory(schoolId, studentId, categoryId) {
+    try {
+      const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
+      const snapshot = await studentRef.once('value');
+      const student = snapshot.val();
+
+      if (!student) {
+        throw new Error('Student not found');
+      }
+
+      const currentAssessments = student.assessments || { categories: [], assessments: [] };
+      const categories = (currentAssessments.categories || []).filter(cat => String(cat.id) !== String(categoryId));
+      
+      // Also remove assessments for this category
+      const assessments = (currentAssessments.assessments || []).filter(
+        assessment => String(assessment.categoryId) !== String(categoryId)
+      );
+
+      const updatesObj = {
+        'assessments': {
+          categories,
+          assessments,
+          updatedAt: admin.database.ServerValue.TIMESTAMP
+        },
+        updatedAt: admin.database.ServerValue.TIMESTAMP
+      };
+
+      await studentRef.update(updatesObj);
+
+      return { success: true };
+    } catch (err) {
+      console.error('Delete assessment category error:', err);
+      return { success: false, message: err.message };
+    }
+  }
+
+  /**
+   * Add an assessment record for a student
+   */
+  static async addAssessment(schoolId, studentId, assessmentData) {
+    try {
+      const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
+      const snapshot = await studentRef.once('value');
+      const student = snapshot.val();
+
+      if (!student) {
+        throw new Error('Student not found');
+      }
+
+      const currentAssessments = student.assessments || { categories: [], assessments: [] };
+      const assessments = currentAssessments.assessments || [];
+      
+      const newAssessment = {
+        id: Date.now().toString(),
+        ...assessmentData,
+        createdAt: admin.database.ServerValue.TIMESTAMP
+      };
+
+      const updatedAssessments = [...assessments, newAssessment];
+
+      const updatesObj = {
+        'assessments': {
+          ...currentAssessments,
+          assessments: updatedAssessments,
+          updatedAt: admin.database.ServerValue.TIMESTAMP
+        },
+        updatedAt: admin.database.ServerValue.TIMESTAMP
+      };
+
+      await studentRef.update(updatesObj);
+
+      return { success: true, assessment: newAssessment };
+    } catch (err) {
+      console.error('Add assessment error:', err);
+      return { success: false, message: err.message };
+    }
+  }
+
+  /**
+   * Update an assessment record
+   */
+  static async updateAssessment(schoolId, studentId, assessmentId, updates) {
+    try {
+      const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
+      const snapshot = await studentRef.once('value');
+      const student = snapshot.val();
+
+      if (!student) {
+        throw new Error('Student not found');
+      }
+
+      const currentAssessments = student.assessments || { categories: [], assessments: [] };
+      const assessments = (currentAssessments.assessments || []).map(assessment =>
+        String(assessment.id) === String(assessmentId) ? { ...assessment, ...updates } : assessment
+      );
+
+      const updatesObj = {
+        'assessments': {
+          ...currentAssessments,
+          assessments,
+          updatedAt: admin.database.ServerValue.TIMESTAMP
+        },
+        updatedAt: admin.database.ServerValue.TIMESTAMP
+      };
+
+      await studentRef.update(updatesObj);
+
+      return { success: true };
+    } catch (err) {
+      console.error('Update assessment error:', err);
+      return { success: false, message: err.message };
+    }
+  }
+
+  /**
+   * Delete an assessment record
+   */
+  static async deleteAssessment(schoolId, studentId, assessmentId) {
+    try {
+      const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
+      const snapshot = await studentRef.once('value');
+      const student = snapshot.val();
+
+      if (!student) {
+        throw new Error('Student not found');
+      }
+
+      const currentAssessments = student.assessments || { categories: [], assessments: [] };
+      const assessments = (currentAssessments.assessments || []).filter(
+        assessment => String(assessment.id) !== String(assessmentId)
+      );
+
+      const updatesObj = {
+        'assessments': {
+          ...currentAssessments,
+          assessments,
+          updatedAt: admin.database.ServerValue.TIMESTAMP
+        },
+        updatedAt: admin.database.ServerValue.TIMESTAMP
+      };
+
+      await studentRef.update(updatesObj);
+
+      return { success: true };
+    } catch (err) {
+      console.error('Delete assessment error:', err);
+      return { success: false, message: err.message };
+    }
+  }
 }
 
 module.exports = StudentModel;

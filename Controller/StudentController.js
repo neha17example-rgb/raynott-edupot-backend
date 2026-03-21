@@ -228,6 +228,102 @@ static async searchStudents(req, res) {
     });
   }
 }
+
+// In StudentController.js - Add these methods
+
+  // === Assessment Reports ===
+  
+  static async getAssessments(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || req.user.role !== 'school_admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { studentId } = req.params;
+
+    try {
+      const assessments = await StudentModel.getAssessments(schoolId, studentId);
+      res.json({ success: true, assessments });
+    } catch (err) {
+      res.status(500).json({ success: false, error: 'Failed to fetch assessments' });
+    }
+  }
+
+  static async addAssessmentCategory(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || req.user.role !== 'school_admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { studentId } = req.params;
+    const result = await StudentModel.addAssessmentCategory(schoolId, studentId, req.body);
+    
+    if (result.success) {
+      res.status(201).json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  }
+
+  static async updateAssessmentCategory(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || req.user.role !== 'school_admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { studentId, categoryId } = req.params;
+    const result = await StudentModel.updateAssessmentCategory(schoolId, studentId, categoryId, req.body);
+    res.json(result);
+  }
+
+  static async deleteAssessmentCategory(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || req.user.role !== 'school_admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { studentId, categoryId } = req.params;
+    const result = await StudentModel.deleteAssessmentCategory(schoolId, studentId, categoryId);
+    res.json(result);
+  }
+
+  static async addAssessment(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || req.user.role !== 'school_admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { studentId } = req.params;
+    const result = await StudentModel.addAssessment(schoolId, studentId, req.body);
+    
+    if (result.success) {
+      res.status(201).json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  }
+
+  static async updateAssessment(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || req.user.role !== 'school_admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { studentId, assessmentId } = req.params;
+    const result = await StudentModel.updateAssessment(schoolId, studentId, assessmentId, req.body);
+    res.json(result);
+  }
+
+  static async deleteAssessment(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || req.user.role !== 'school_admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { studentId, assessmentId } = req.params;
+    const result = await StudentModel.deleteAssessment(schoolId, studentId, assessmentId);
+    res.json(result);
+  }
 }
 
 module.exports = StudentController;
