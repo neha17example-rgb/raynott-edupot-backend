@@ -1,7 +1,8 @@
 const AuthModel = require('../Model/AuthModel');
 
 class AuthController {
-  static async login(req, res) {
+// In AuthController.js
+static async login(req, res) {
   if (!req.user) {
     return res.status(500).json({ success: false, error: 'User not attached' });
   }
@@ -14,8 +15,10 @@ class AuthController {
       email: req.user.email,
       name: profile.name || req.user.name,
       isAdmin: req.user.isAdmin,
-      schoolId: req.user.schoolId || profile.schoolId || null,  // ← important
-      role: req.user.role || profile.role || 'user',
+      schoolId: req.user.schoolId || null,
+      role: req.user.role || 'user',
+      fullAccess: req.user.fullAccess || profile.fullAccess || false,  // ← Use from token or profile
+        enabledTabs: req.user.enabledTabs || profile.enabledTabs || [],  
       picture: profile.picture || req.user.picture,
     };
 
@@ -27,7 +30,6 @@ class AuthController {
     console.error('Login response error:', err);
     return res.status(500).json({ success: false, error: 'Server error' });
   }
-}
-}
+}}
 
 module.exports = AuthController;

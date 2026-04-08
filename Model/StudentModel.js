@@ -26,7 +26,6 @@ class StudentModel {
       const admissionNo = studentData.basicInfo?.admissionNo?.trim();
       if (!admissionNo) throw new Error('Admission number is required');
 
-      // Unique admissionNo check per school
       const existingSnap = await rtdb.ref(this.STUDENTS_REF(schoolId))
         .orderByChild('basicInfo/admissionNo')
         .equalTo(admissionNo)
@@ -52,7 +51,6 @@ class StudentModel {
         pendingAmount: studentData.pendingAmount || studentData.feeStructure?.total || 0,
       };
 
-      // Remove client-side temporary id
       delete fullStudent.id;
 
       await rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`).set(fullStudent);
@@ -111,7 +109,7 @@ class StudentModel {
     }
   }
 
-  // === Fees Installment CRUD (mirrors FeesInstallment.jsx logic) ===
+  // === Fees Installment  ===
   static async addInstallment(schoolId, studentId, installmentData) {
     try {
       const ref = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
@@ -169,7 +167,7 @@ class StudentModel {
     console.log("  Current installments count:", student.installments?.length || 0);
 
     const installments = (student.installments || []).map(inst =>
-      String(inst.id) === String(installmentId)   // ← very important: string comparison!
+      String(inst.id) === String(installmentId)   
         ? { ...inst, ...updates }
         : inst
     );
@@ -211,7 +209,6 @@ class StudentModel {
     const originalCount = student.installments?.length || 0;
     console.log("  Before delete - count:", originalCount);
 
-    // Very important: convert to string for comparison
     let installments = (student.installments || []).filter(inst => 
       String(inst.id) !== String(installmentId)
     );
@@ -243,7 +240,7 @@ class StudentModel {
   }
 }
 
-  // === Marks (full marks object replace – matches Marks.jsx) ===
+  // === Marks ===
   
   static async getMarks(schoolId, studentId) {
     try {
@@ -262,7 +259,6 @@ class StudentModel {
    * @param {string} studentId
    * @param {object} examData – the new exam object (without id – will be generated)
    */
-  // In StudentModel.js - update the addExam method
 
 static async addExam(schoolId, studentId, examData) {
   try {
@@ -285,7 +281,6 @@ static async addExam(schoolId, studentId, examData) {
 
     const updatedExams = [...currentExams, newExam];
 
-    // Instead of using dot notation in the path, create a proper update object
     const updates = {
       'marks': {
         ...currentMarks,
@@ -295,7 +290,6 @@ static async addExam(schoolId, studentId, examData) {
       updatedAt: admin.database.ServerValue.TIMESTAMP
     };
 
-    // Use set/update without dot notation in paths
     await studentRef.update(updates);
 
     return { success: true, exam: newExam };
@@ -305,7 +299,6 @@ static async addExam(schoolId, studentId, examData) {
   }
 }
 
-  // In StudentModel.js - update the deleteExam method
 
 static async deleteExam(schoolId, studentId, examId) {
   try {
@@ -343,7 +336,6 @@ static async deleteExam(schoolId, studentId, examId) {
   }
 }
 
-  // In StudentModel.js - update the updateMarks method
 
 static async updateMarks(schoolId, studentId, marksData) {
   try {
@@ -367,8 +359,8 @@ static async updateMarks(schoolId, studentId, marksData) {
 /**
  * Search students by multiple optional criteria
  * @param {string} schoolId
- * @param {Object} criteria - { name?, admissionNo?, grade?, section?, fatherName?, motherName?, aadhar?, ... }
- * @returns {Promise<Array>} matching students
+ * @param {Object} criteria 
+ * @returns {Promise<Array>} 
  */
 static async searchStudents(schoolId, criteria = {}) {
   try {
@@ -411,7 +403,6 @@ static async searchStudents(schoolId, criteria = {}) {
       const matchesAadhar = !criteria.aadhar || 
         basic.aadhar === criteria.aadhar;
 
-      // Add more fields as needed (dob, city, bloodGroup, phone, etc.)
 
       if (matchesName && matchesAdmissionNo && matchesGrade && 
           matchesSection && matchesFather && matchesMother && matchesAadhar) {
@@ -419,7 +410,6 @@ static async searchStudents(schoolId, criteria = {}) {
       }
     });
 
-    // Sort by name (optional)
     results.sort((a, b) => {
       const nameA = a.basicInfo?.name?.toLowerCase() || '';
       const nameB = b.basicInfo?.name?.toLowerCase() || '';
@@ -432,9 +422,6 @@ static async searchStudents(schoolId, criteria = {}) {
     throw err;
   }
 }
-// In StudentModel.js - Add these methods
-
-  // === Assessment Reports ===
   
   /**
    * Get all assessments for a student
@@ -450,7 +437,7 @@ static async searchStudents(schoolId, criteria = {}) {
   }
 
   /**
-   * Add a new assessment category (e.g., Reading, Writing, Communication)
+   * Add a new assessment category 
    */
   static async addAssessmentCategory(schoolId, studentId, categoryData) {
     try {
@@ -545,7 +532,6 @@ static async searchStudents(schoolId, criteria = {}) {
       const currentAssessments = student.assessments || { categories: [], assessments: [] };
       const categories = (currentAssessments.categories || []).filter(cat => String(cat.id) !== String(categoryId));
       
-      // Also remove assessments for this category
       const assessments = (currentAssessments.assessments || []).filter(
         assessment => String(assessment.categoryId) !== String(categoryId)
       );

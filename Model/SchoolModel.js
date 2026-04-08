@@ -1,4 +1,3 @@
-// src/Model/SchoolModel.js
 const { admin, rtdb } = require('../Config/firebaseAdmin');
 
 class SchoolModel {
@@ -101,7 +100,6 @@ class SchoolModel {
         });
       });
 
-      // Optional: sort by createdAt or name
       schools.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
       return schools;
@@ -152,7 +150,7 @@ class SchoolModel {
       schoolId,
       errorCode: err.code,
       errorMessage: err.message,
-      stack: err.stack?.substring(0, 300) // partial stack for brevity
+      stack: err.stack?.substring(0, 300) 
     });
     return { success: false, message: err.message || 'Password reset failed' };
   }
@@ -167,10 +165,8 @@ class SchoolModel {
 
       const user = await admin.auth().getUserByEmail(school.email);
 
-      // Delete auth user
       await admin.auth().deleteUser(user.uid);
 
-      // Delete RTDB data
       await rtdb.ref(`${this.SCHOOLS_REF}/${schoolId}`).remove();
       await rtdb.ref(`${this.USERS_REF}/${user.uid}`).remove();
 
@@ -184,7 +180,140 @@ class SchoolModel {
       };
     }
   }
-  
+  static async createSchoolUser(userData) {
+  try {
+    const userRecord = await admin.auth().createUser({
+      email: userData.email,
+      password: userData.password,
+      displayName: userData.name,
+      emailVerified: false,
+    });
+
+    await admin.auth().setCustomUserClaims(userRecord.uid, {
+      role: 'school_user',
+      schoolId: userData.schoolId,
+       fullAccess: userData.fullAccess || false,
+    });
+
+    // FIX: Save email to the profile
+    await rtdb.ref(`users/${userRecord.uid}/profile`).set({
+      name: userData.name,
+      email: userData.email,  // ← Add this line
+      schoolId: userData.schoolId,
+      role: 'school_user',
+      fullAccess: userData.fullAccess || false,  // ← Add this
+      enabledTabs: userData.enabledTabs || [], 
+      createdAt: Date.now(),
+    });
+
+    return {
+      success: true,
+      uid: userRecord.uid,
+      email: userRecord.email,
+    };
+  } catch (err) {
+    console.error('Create school user error:', err);
+    return { success: false, error: err.code || 'internal-error', message: err.message };
+  }
+}
+
+static async getSchoolUsers(schoolId) {
+  try {
+    const snapshot = await rtdb.ref(this.USERS_REF).orderByChild('profile/schoolId').equalTo(schoolId).once('value');
+    const users = [];
+
+    snapshot.forEach(child => {
+      const profile = child.val()?.profile || {};
+      // Only add users that are NOT school_admin
+      if (profile.schoolId === schoolId && profile.role !== 'school_admin') {
+        users.push({
+          uid: child.key,
+          name: profile.name,
+          email: profile.email || 'N/A',  // This should now have the email
+          role: profile.role,
+          fullAccess: profile.fullAccess || false,
+          createdAt: profile.createdAt,
+          enabledTabs: profile.enabledTabs || [] 
+        });
+      }
+    });
+
+    return { success: true, users };
+  } catch (err) {
+    console.error('Get school users error:', err);
+    return { success: false, message: err.message };
+  }
+}
+  static async updateSchoolUser(uid, updateData) {
+  try {
+    // Update custom claims if fullAccess is being updated
+    if (updateData.fullAccess !== undefined) {
+      const user = await admin.auth().getUser(uid);
+      const currentClaims = user.customClaims || {};
+      await admin.auth().setCustomUserClaims(uid, {
+        ...currentClaims,
+        fullAccess: updateData.fullAccess
+      });
+    }
+
+    // Update database profile
+    await rtdb.ref(`users/${uid}/profile`).update({
+      name: updateData.name,
+      ...(updateData.fullAccess !== undefined && { fullAccess: updateData.fullAccess })
+    });
+
+    return { success: true };
+  } catch (err) {
+    console.error('Update school user error:', err);
+    return { success: false, message: err.message };
+  }
+}
+
+  static async deleteSchoolUser(uid) {
+    try {
+      await admin.auth().deleteUser(uid);
+      await rtdb.ref(`users/${uid}`).remove();
+      return { success: true };
+    } catch (err) {
+      console.error('Delete school user error:', err);
+      return { success: false, message: err.message };
+    }
+  }
+
+  // ==================== TAB CONFIGURATION ====================
+
+  static async updateSchoolTabConfig(schoolId, enabledTabs) {
+    try {
+      await rtdb.ref(`schools/${schoolId}/tabConfig`).set({
+        enabledTabs,
+        updatedAt: Date.now()
+      });
+      return { success: true };
+    } catch (err) {
+      console.error('Update tab config error:', err);
+      return { success: false, message: err.message };
+    }
+  }
+
+  static async getSchoolTabConfig(schoolId) {
+    try {
+      const snapshot = await rtdb.ref(`schools/${schoolId}/tabConfig`).once('value');
+      return snapshot.val() || { enabledTabs: ['search', 'allStudents', 'addStudent'] };
+    } catch (err) {
+      console.error('Get tab config error:', err);
+      return null;
+    }
+  }
+
+  static async updateUserTabConfig(uid, enabledTabs) {
+  try {
+    await rtdb.ref(`users/${uid}/profile/enabledTabs`).set(enabledTabs);
+    return { success: true };
+  } catch (err) {
+    console.error('Update user tab config error:', err);
+    return { success: false, message: err.message };
+  }
+}
 }
 
 module.exports = SchoolModel;
