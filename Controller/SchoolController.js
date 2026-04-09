@@ -1,6 +1,8 @@
 // src/Controller/SchoolController.js
 const SchoolModel = require('../Model/SchoolModel');
 const { rtdb } = require('../Config/firebaseAdmin');
+const { admin } = require('../Config/firebaseAdmin');
+
 
 class SchoolController {
     
@@ -73,6 +75,8 @@ class SchoolController {
       res.status(400).json(result);
     }
   }
+
+
   static async deleteSchool(req, res) {
     if (!req.user?.isAdmin) {
       return res.status(403).json({ success: false, error: 'Admin access required' });
@@ -92,6 +96,8 @@ class SchoolController {
       res.status(400).json(result);
     }
   }
+
+
   static async createSchoolUser(req, res) {
     try {
       const { schoolId } = req.params;
@@ -124,7 +130,7 @@ class SchoolController {
     }
   }
 
-  // Get All Users of a School
+
   static async getSchoolUsers(req, res) {
     try {
       const { schoolId } = req.params;
@@ -135,7 +141,7 @@ class SchoolController {
     }
   }
 
-  // Update School User (e.g., change name or fullAccess)
+
   static async updateSchoolUser(req, res) {
     try {
       const { uid } = req.params;
@@ -148,7 +154,7 @@ class SchoolController {
     }
   }
 
-  // Delete School User
+
   static async deleteSchoolUser(req, res) {
     try {
       const { uid } = req.params;
@@ -159,7 +165,7 @@ class SchoolController {
     }
   }
 
-  // Update Tab Configuration for a School
+
   static async updateSchoolTabConfig(req, res) {
     try {
       const { schoolId } = req.params;
@@ -176,7 +182,6 @@ class SchoolController {
     }
   }
 
-  // Get Tab Configuration
   static async getSchoolTabConfig(req, res) {
     try {
       const { schoolId } = req.params;
@@ -186,6 +191,8 @@ class SchoolController {
       res.status(500).json({ success: false, error: 'Failed to fetch tab config' });
     }
   }
+
+
 static async resetSchoolUserPassword(req, res) {
   if (!req.user?.isAdmin) return res.status(403).json({ error: 'Forbidden' });
   
@@ -193,7 +200,7 @@ static async resetSchoolUserPassword(req, res) {
   const { newPassword } = req.body;
   
   if (!newPassword || newPassword.length < 8) {
-    return res.status(400).json({ error: 'Password too short' });
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
   
   try {
@@ -204,6 +211,7 @@ static async resetSchoolUserPassword(req, res) {
     res.status(400).json({ success: false, message: err.message });
   }
 }
+
 static async updateUserTabConfig(req, res) {
   if (!req.user?.isAdmin) return res.status(403).json({ error: 'Forbidden' });
   
@@ -224,6 +232,38 @@ static async updateUserTabConfig(req, res) {
   } catch (err) {
     console.error('Update user tab config error:', err);
     res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+static async getUserProfile(req, res) {
+  try {
+    const { uid } = req.params;
+    
+    // Allow users to access their own profile or admin access
+    if (req.user.uid !== uid && !req.user.isAdmin) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    const snapshot = await rtdb.ref(`users/${uid}/profile`).once('value');
+    const profile = snapshot.val() || {};
+    
+    // Get custom claims
+    const userRecord = await admin.auth().getUser(uid);
+    const claims = userRecord.customClaims || {};
+    
+    // Combine data
+    const userProfile = {
+      ...profile,
+      fullAccess: profile.fullAccess || claims.fullAccess || false,
+      enabledTabs: profile.enabledTabs || [], // This is the key field
+      role: profile.role || claims.role || 'user',
+      schoolId: profile.schoolId || claims.schoolId
+    };
+    
+    res.json(userProfile);
+  } catch (err) {
+    console.error('Get profile error:', err);
+    res.status(500).json({ error: err.message });
   }
 }
 }

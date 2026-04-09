@@ -1,3 +1,4 @@
+// Middleware/AuthMiddle.js
 const AuthModel = require('../Model/AuthModel');
 
 const requireAuth = async (req, res, next) => {
@@ -34,4 +35,24 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
-module.exports = { requireAuth, requireAdmin };
+// Single middleware for all school access (both school_admin and school_user)
+const requireSchoolAccess = (req, res, next) => {
+  console.log('requireSchoolAccess - User:', {
+    uid: req.user?.uid,
+    role: req.user?.role,
+    schoolId: req.user?.schoolId
+  });
+  
+  // Allow if user has schoolId and role is either school_admin OR school_user
+  if (req.user?.schoolId && (req.user?.role === 'school_admin' || req.user?.role === 'school_user')) {
+    return next();
+  }
+  
+  return res.status(403).json({ 
+    success: false,
+    error: 'school_access_required',
+    message: 'School access required' 
+  });
+};
+
+module.exports = { requireAuth, requireAdmin, requireSchoolAccess };

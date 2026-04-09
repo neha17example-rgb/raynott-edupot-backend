@@ -3,8 +3,9 @@ const StudentModel = require('../Model/StudentModel');
 class StudentController {
   static async createStudent(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') {
-      return res.status(403).json({ success: false, error: 'School admin access required' });
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({ success: false, error: 'School access required' });
     }
 
     const studentData = req.body;
@@ -23,7 +24,8 @@ class StudentController {
 
   static async getAllStudents(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') {
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     try {
@@ -36,7 +38,8 @@ class StudentController {
 
   static async getStudent(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') {
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     const { studentId } = req.params;
@@ -50,7 +53,8 @@ class StudentController {
 
   static async updateStudent(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') {
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     const { studentId } = req.params;
@@ -61,7 +65,8 @@ class StudentController {
 
   static async deleteStudent(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') {
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     const { studentId } = req.params;
@@ -72,62 +77,68 @@ class StudentController {
   // === Fees Installment CRUD ===
   static async addInstallment(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') return res.status(403).json({ error: 'Forbidden' });
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     const { studentId } = req.params;
     const result = await StudentModel.addInstallment(schoolId, studentId, req.body);
     res.json(result);
   }
 
   static async updateInstallment(req, res) {
-  const schoolId = req.user?.schoolId;
-  const { studentId, installmentId } = req.params;
-  const updates = req.body;
+    const schoolId = req.user?.schoolId;
+    const { studentId, installmentId } = req.params;
+    const updates = req.body;
 
-  console.log(`[UPDATE INSTALLMENT] ${new Date().toISOString()}`);
-  console.log("  schoolId     :", schoolId);
-  console.log("  studentId    :", studentId);
-  console.log("  installmentId:", installmentId);
-  console.log("  updates      :", updates);
-  console.log("  user         :", req.user?.email || req.user?.uid || "unknown");
+    console.log(`[UPDATE INSTALLMENT] ${new Date().toISOString()}`);
+    console.log("  schoolId     :", schoolId);
+    console.log("  studentId    :", studentId);
+    console.log("  installmentId:", installmentId);
+    console.log("  updates      :", updates);
+    console.log("  user         :", req.user?.email || req.user?.uid || "unknown");
 
-  if (!schoolId || req.user.role !== 'school_admin') {
-    console.log("→ Forbidden - missing schoolId or role");
-    return res.status(403).json({ error: 'Forbidden' });
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      console.log("→ Forbidden - missing schoolId or role");
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const result = await StudentModel.updateInstallment(schoolId, studentId, installmentId, updates);
+
+    console.log("→ Result:", result);
+
+    res.json(result);
   }
-
-  const result = await StudentModel.updateInstallment(schoolId, studentId, installmentId, updates);
-
-  console.log("→ Result:", result);
-
-  res.json(result);
-}
 
   static async deleteInstallment(req, res) {
-  const schoolId = req.user?.schoolId;
-  const { studentId, installmentId } = req.params;
+    const schoolId = req.user?.schoolId;
+    const { studentId, installmentId } = req.params;
 
-  console.log(`[DELETE INSTALLMENT] ${new Date().toISOString()}`);
-  console.log("  schoolId      :", schoolId);
-  console.log("  studentId     :", studentId);
-  console.log("  installmentId :", installmentId);
-  console.log("  type of id    :", typeof installmentId);
+    console.log(`[DELETE INSTALLMENT] ${new Date().toISOString()}`);
+    console.log("  schoolId      :", schoolId);
+    console.log("  studentId     :", studentId);
+    console.log("  installmentId :", installmentId);
+    console.log("  type of id    :", typeof installmentId);
 
-  if (!schoolId || req.user.role !== 'school_admin') {
-    console.log("→ Forbidden");
-    return res.status(403).json({ error: 'Forbidden' });
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      console.log("→ Forbidden");
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const result = await StudentModel.deleteInstallment(schoolId, studentId, installmentId);
+
+    console.log("→ Delete result:", result);
+
+    res.json(result);
   }
-
-  const result = await StudentModel.deleteInstallment(schoolId, studentId, installmentId);
-
-  console.log("→ Delete result:", result);
-
-  res.json(result);
-}
 
   // === Marks (full marks object) ===
   static async getMarks(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') {
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -146,7 +157,8 @@ class StudentController {
 
   static async addExam(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') {
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -167,7 +179,8 @@ class StudentController {
 
   static async deleteExam(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') {
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -184,58 +197,61 @@ class StudentController {
   
   static async updateMarks(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') return res.status(403).json({ error: 'Forbidden' });
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     const { studentId } = req.params;
     const result = await StudentModel.updateMarks(schoolId, studentId, req.body);
     res.json(result);
   }
+
   /**
- * Search students by multiple criteria
- * @route GET /students/search
- * @access School Admin only
- */
-static async searchStudents(req, res) {
-  const schoolId = req.user?.schoolId;
+   * Search students by multiple criteria
+   * @route GET /students/search
+   * @access School users only
+   */
+  static async searchStudents(req, res) {
+    const schoolId = req.user?.schoolId;
 
-  if (!schoolId || req.user.role !== 'school_admin') {
-    return res.status(403).json({
-      success: false,
-      error: 'Forbidden: School admin access required'
-    });
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: School access required'
+      });
+    }
+
+    try {
+      const criteria = req.query;
+      // Optional: clean up empty strings
+      Object.keys(criteria).forEach(key => {
+        if (criteria[key] === '') delete criteria[key];
+      });
+
+      const students = await StudentModel.searchStudents(schoolId, criteria);
+
+      return res.json({
+        success: true,
+        students,
+        count: students.length,
+        message: students.length === 0 ? 'No matching students found' : undefined
+      });
+    } catch (err) {
+      console.error('Search students controller error:', err);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to search students'
+      });
+    }
   }
-
-  try {
-    const criteria = req.query; // name, admissionNo, grade, section, fatherName, motherName, aadhar, ...
-
-    // Optional: clean up empty strings
-    Object.keys(criteria).forEach(key => {
-      if (criteria[key] === '') delete criteria[key];
-    });
-
-    const students = await StudentModel.searchStudents(schoolId, criteria);
-
-    return res.json({
-      success: true,
-      students,
-      count: students.length,
-      message: students.length === 0 ? 'No matching students found' : undefined
-    });
-  } catch (err) {
-    console.error('Search students controller error:', err);
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to search students'
-    });
-  }
-}
-
-// In StudentController.js - Add these methods
 
   // === Assessment Reports ===
   
   static async getAssessments(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') {
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -251,7 +267,8 @@ static async searchStudents(req, res) {
 
   static async addAssessmentCategory(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') {
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -267,7 +284,8 @@ static async searchStudents(req, res) {
 
   static async updateAssessmentCategory(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') {
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -278,7 +296,8 @@ static async searchStudents(req, res) {
 
   static async deleteAssessmentCategory(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') {
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -289,7 +308,8 @@ static async searchStudents(req, res) {
 
   static async addAssessment(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') {
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -305,7 +325,8 @@ static async searchStudents(req, res) {
 
   static async updateAssessment(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') {
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -316,7 +337,8 @@ static async searchStudents(req, res) {
 
   static async deleteAssessment(req, res) {
     const schoolId = req.user?.schoolId;
-    if (!schoolId || req.user.role !== 'school_admin') {
+    // Allow both school_admin AND school_user
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 

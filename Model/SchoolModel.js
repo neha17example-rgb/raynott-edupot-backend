@@ -28,63 +28,67 @@ class SchoolModel {
     }
   }
 
-  static async createSchool(schoolData) {
-    const { name, email, password, phone } = schoolData;
+static async createSchool(schoolData) {
+  const { name, email, password, phone } = schoolData;
 
-    try {
-      // 1. Generate proper sequential ID
-      const schoolId = await this.generateSchoolId();
+  try {
+    // 1. Generate proper sequential ID
+    const schoolId = await this.generateSchoolId();
 
-      // 2. Create Firebase Auth user
-      const userRecord = await admin.auth().createUser({
-        email: email.trim(),
-        password,
-        displayName: `${name.trim()} Admin`,
-        disabled: false,
-      });
+    // 2. Create Firebase Auth user
+    const userRecord = await admin.auth().createUser({
+      email: email.trim(),
+      password,
+      displayName: `${name.trim()} Admin`,
+      disabled: false,
+    });
 
-      const uid = userRecord.uid;
+    const uid = userRecord.uid;
 
-      // 3. Set custom claims
-      await admin.auth().setCustomUserClaims(uid, {
-        schoolId,
-        role: 'school_admin',
-      });
+    // 3. Set custom claims - IMPORTANT: Set claims before creating database entries
+    await admin.auth().setCustomUserClaims(uid, {
+      schoolId: schoolId,
+      role: 'school_admin',  // Must match what AuthModel expects
+      admin: false  // Not a super admin
+    });
 
-      // 4. Save school info
-      const schoolInfoRef = rtdb.ref(`${this.SCHOOLS_REF}/${schoolId}/info`);
-      await schoolInfoRef.set({
-        name: name.trim(),
-        email: email.trim(),
-        phone: phone?.trim() || null,
-        createdAt: admin.database.ServerValue.TIMESTAMP,
-        status: 'active',
-        lastLogin: null,
-      });
+    // 4. Save school info
+    const schoolInfoRef = rtdb.ref(`${this.SCHOOLS_REF}/${schoolId}/info`);
+    await schoolInfoRef.set({
+      name: name.trim(),
+      email: email.trim(),
+      phone: phone?.trim() || null,
+      createdAt: admin.database.ServerValue.TIMESTAMP,
+      status: 'active',
+      lastLogin: null,
+    });
 
-      await rtdb.ref(`${this.USERS_REF}/${uid}/profile`).update({
-        schoolId,
-        role: 'school_admin',
-        name: `${name.trim()} Admin`,
-        createdAt: admin.database.ServerValue.TIMESTAMP,
-      });
+    // Save user profile with role
+    await rtdb.ref(`${this.USERS_REF}/${uid}/profile`).update({
+      schoolId,
+      role: 'school_admin',
+      name: `${name.trim()} Admin`,
+      createdAt: admin.database.ServerValue.TIMESTAMP,
+      fullAccess: true,  // School admins have full access
+      enabledTabs: []    // Will use school config
+    });
 
-      return {
-        success: true,
-        schoolId,
-        uid,
-        email: email.trim(),
-        message: 'School and admin account created successfully',
-      };
-    } catch (error) {
-      console.error('Create school error:', error);
-      return {
-        success: false,
-        error: error.code || 'internal-error',
-        message: error.message,
-      };
-    }
+    return {
+      success: true,
+      schoolId,
+      uid,
+      email: email.trim(),
+      message: 'School and admin account created successfully',
+    };
+  } catch (error) {
+    console.error('Create school error:', error);
+    return {
+      success: false,
+      error: error.code || 'internal-error',
+      message: error.message,
+    };
   }
+}
 
   static async listSchools() {
     try {
