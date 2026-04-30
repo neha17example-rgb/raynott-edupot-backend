@@ -3,6 +3,7 @@ const router = express.Router();
 const AuthController = require('../Controller/AuthController');
 const SchoolController = require('../Controller/SchoolController');
 const StudentController = require('../Controller/StudentController');
+const TeacherController = require('../Controller/TeacherController');
 
 const { requireAuth, requireAdmin, requireSchoolAccess } = require('../Middleware/AuthMiddle');
 
@@ -19,7 +20,6 @@ router.get('/admin-only', requireAuth, requireAdmin, (req, res) => {
 });
 
 // ALL Student routes - use requireSchoolAccess for all operations
-// This gives both school_admin AND school_user full access
 router.get('/students/search', requireAuth, requireSchoolAccess, StudentController.searchStudents);
 router.get('/students', requireAuth, requireSchoolAccess, StudentController.getAllStudents);
 router.get('/students/:studentId', requireAuth, requireSchoolAccess, StudentController.getStudent);
@@ -46,6 +46,18 @@ router.delete('/students/:studentId/assessments/categories/:categoryId', require
 router.post('/students/:studentId/assessments/records', requireAuth, requireSchoolAccess, StudentController.addAssessment);
 router.patch('/students/:studentId/assessments/records/:assessmentId', requireAuth, requireSchoolAccess, StudentController.updateAssessment);
 router.delete('/students/:studentId/assessments/records/:assessmentId', requireAuth, requireSchoolAccess, StudentController.deleteAssessment);
+
+router.get('/teachers', requireAuth, requireSchoolAccess, TeacherController.getAllTeachers);
+router.get('/teachers/stats/dashboard', requireAuth, requireSchoolAccess, TeacherController.getTeacherStats);
+router.get('/teachers/:teacherId', requireAuth, requireSchoolAccess, TeacherController.getTeacherById);
+router.post('/teachers', requireAuth, requireSchoolAccess, TeacherController.createTeacher);
+router.patch('/teachers/:teacherId', requireAuth, requireSchoolAccess, TeacherController.updateTeacher);
+router.delete('/teachers/:teacherId', requireAuth, requireSchoolAccess, TeacherController.deleteTeacher);
+
+router.patch('/teachers/:teacherId/performance/:className', requireAuth, requireSchoolAccess, TeacherController.updateClassPerformance);
+
+router.get('/teachers/subject/:subject', requireAuth, requireSchoolAccess, TeacherController.getTeachersBySubject);
+router.get('/teachers/class/:className', requireAuth, requireSchoolAccess, TeacherController.getTeachersByClass);
 
 // School management routes (super admin only)
 router.post('/schools', requireAuth, requireAdmin, SchoolController.createSchool);
