@@ -4,6 +4,8 @@ const AuthController = require('../Controller/AuthController');
 const SchoolController = require('../Controller/SchoolController');
 const StudentController = require('../Controller/StudentController');
 const TeacherController = require('../Controller/TeacherController');
+const HallTicketController = require('../Controller/HallTicketController');
+const upload = require('../Middleware/multerMiddleware');
 
 const { requireAuth, requireAdmin, requireSchoolAccess } = require('../Middleware/AuthMiddle');
 
@@ -58,6 +60,35 @@ router.patch('/teachers/:teacherId/performance/:className', requireAuth, require
 
 router.get('/teachers/subject/:subject', requireAuth, requireSchoolAccess, TeacherController.getTeachersBySubject);
 router.get('/teachers/class/:className', requireAuth, requireSchoolAccess, TeacherController.getTeachersByClass);
+
+router.post('/halltickets/:studentId', requireAuth, requireSchoolAccess,upload.single('photo'), HallTicketController.saveHallTicket);
+
+// Get all hall tickets for the school
+router.get('/halltickets', requireAuth, requireSchoolAccess, HallTicketController.getAllHallTickets);
+
+// Get specific hall ticket
+router.get('/halltickets/:studentId', requireAuth, requireSchoolAccess, HallTicketController.getHallTicket);
+
+// Check if hall ticket exists
+router.get('/halltickets/:studentId/exists', requireAuth, requireSchoolAccess, HallTicketController.hallTicketExists);
+
+// Delete hall ticket
+router.delete('/halltickets/:studentId', requireAuth, requireSchoolAccess, HallTicketController.deleteHallTicket);
+
+// Get hall tickets by date range
+router.get('/halltickets/reports/date-range', requireAuth, requireSchoolAccess, HallTicketController.getHallTicketsByDateRange);
+
+// Bulk generate hall tickets (admin only)
+router.post('/halltickets/bulk/generate', requireAuth, requireAdmin,HallTicketController.bulkGenerateHallTickets);
+
+// Get hall ticket template
+router.get('/halltickets/template/settings', requireAuth, requireSchoolAccess, HallTicketController.getHallTicketTemplate);
+
+// Save hall ticket template (admin only)
+router.post('/halltickets/template/settings', requireAuth, requireAdmin,HallTicketController.saveHallTicketTemplate);
+
+// Export hall tickets as CSV (admin only)
+router.get('/halltickets/export/csv', requireAuth, requireAdmin,HallTicketController.exportHallTicketsCSV);
 
 // School management routes (super admin only)
 router.post('/schools', requireAuth, requireAdmin, SchoolController.createSchool);
