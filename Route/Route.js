@@ -9,19 +9,19 @@ const upload = require('../Middleware/multerMiddleware');
 
 const { requireAuth, requireAdmin, requireSchoolAccess } = require('../Middleware/AuthMiddle');
 
+// Auth Routes
 router.post('/login', requireAuth, AuthController.login);
-
 router.get('/profile', requireAuth, (req, res) => {
   res.json({ success: true, user: req.user });
 });
-
 router.get('/users/:uid/profile', requireAuth, SchoolController.getUserProfile);
-
 router.get('/admin-only', requireAuth, requireAdmin, (req, res) => {
   res.json({ success: true, message: 'Welcome admin!', email: req.user.email });
 });
 
-// ALL Student routes - use requireSchoolAccess for all operations
+// ────────────────────────────────────────────────
+// Student Routes
+// ────────────────────────────────────────────────
 router.get('/students/search', requireAuth, requireSchoolAccess, StudentController.searchStudents);
 router.get('/students', requireAuth, requireSchoolAccess, StudentController.getAllStudents);
 router.get('/students/:studentId', requireAuth, requireSchoolAccess, StudentController.getStudent);
@@ -49,19 +49,25 @@ router.post('/students/:studentId/assessments/records', requireAuth, requireScho
 router.patch('/students/:studentId/assessments/records/:assessmentId', requireAuth, requireSchoolAccess, StudentController.updateAssessment);
 router.delete('/students/:studentId/assessments/records/:assessmentId', requireAuth, requireSchoolAccess, StudentController.deleteAssessment);
 
+// ────────────────────────────────────────────────
+// Teacher Routes
+// ────────────────────────────────────────────────
 router.get('/teachers', requireAuth, requireSchoolAccess, TeacherController.getAllTeachers);
 router.get('/teachers/stats/dashboard', requireAuth, requireSchoolAccess, TeacherController.getTeacherStats);
 router.get('/teachers/:teacherId', requireAuth, requireSchoolAccess, TeacherController.getTeacherById);
 router.post('/teachers', requireAuth, requireSchoolAccess, TeacherController.createTeacher);
 router.patch('/teachers/:teacherId', requireAuth, requireSchoolAccess, TeacherController.updateTeacher);
 router.delete('/teachers/:teacherId', requireAuth, requireSchoolAccess, TeacherController.deleteTeacher);
-
 router.patch('/teachers/:teacherId/performance/:className', requireAuth, requireSchoolAccess, TeacherController.updateClassPerformance);
-
 router.get('/teachers/subject/:subject', requireAuth, requireSchoolAccess, TeacherController.getTeachersBySubject);
 router.get('/teachers/class/:className', requireAuth, requireSchoolAccess, TeacherController.getTeachersByClass);
 
-router.post('/halltickets/:studentId', requireAuth, requireSchoolAccess,upload.single('photo'), HallTicketController.saveHallTicket);
+// ────────────────────────────────────────────────
+// Hall Ticket Routes
+// ────────────────────────────────────────────────
+
+// Save hall ticket with photo upload
+router.post('/halltickets/:studentId', requireAuth, requireSchoolAccess, upload.single('photo'), HallTicketController.saveHallTicket);
 
 // Get all hall tickets for the school
 router.get('/halltickets', requireAuth, requireSchoolAccess, HallTicketController.getAllHallTickets);
@@ -79,18 +85,46 @@ router.delete('/halltickets/:studentId', requireAuth, requireSchoolAccess, HallT
 router.get('/halltickets/reports/date-range', requireAuth, requireSchoolAccess, HallTicketController.getHallTicketsByDateRange);
 
 // Bulk generate hall tickets (admin only)
-router.post('/halltickets/bulk/generate', requireAuth, requireAdmin,HallTicketController.bulkGenerateHallTickets);
+router.post('/halltickets/bulk/generate', requireAuth, requireAdmin, HallTicketController.bulkGenerateHallTickets);
 
 // Get hall ticket template
 router.get('/halltickets/template/settings', requireAuth, requireSchoolAccess, HallTicketController.getHallTicketTemplate);
 
 // Save hall ticket template (admin only)
-router.post('/halltickets/template/settings', requireAuth, requireAdmin,HallTicketController.saveHallTicketTemplate);
+router.post('/halltickets/template/settings', requireAuth, requireAdmin, HallTicketController.saveHallTicketTemplate);
 
 // Export hall tickets as CSV (admin only)
-router.get('/halltickets/export/csv', requireAuth, requireAdmin,HallTicketController.exportHallTicketsCSV);
+router.get('/halltickets/export/csv', requireAuth, requireAdmin, HallTicketController.exportHallTicketsCSV);
 
-// School management routes (super admin only)
+// ────────────────────────────────────────────────
+// School Information Routes (NEW)
+// ────────────────────────────────────────────────
+
+// Get school information
+router.get('/school-info', requireAuth, requireSchoolAccess, HallTicketController.getSchoolInfo);
+
+// Save school information
+router.post('/school-info', requireAuth, requireSchoolAccess, HallTicketController.saveSchoolInfo);
+
+// ────────────────────────────────────────────────
+// Hall Ticket Settings Routes (NEW)
+// ────────────────────────────────────────────────
+
+// Get all hall ticket settings for the school
+router.get('/hallticket-settings', requireAuth, requireSchoolAccess, HallTicketController.getAllHallTicketSettings);
+
+// Get hall ticket settings for a specific class/section
+router.get('/hallticket-settings/:key', requireAuth, requireSchoolAccess, HallTicketController.getHallTicketSettings);
+
+// Save hall ticket settings for a specific class/section
+router.post('/hallticket-settings/:key', requireAuth, requireSchoolAccess, HallTicketController.saveHallTicketSettings);
+
+// Delete hall ticket settings for a class/section
+router.delete('/hallticket-settings/:key', requireAuth, requireSchoolAccess, HallTicketController.deleteHallTicketSettings);
+
+// ────────────────────────────────────────────────
+// School Management Routes (super admin only)
+// ────────────────────────────────────────────────
 router.post('/schools', requireAuth, requireAdmin, SchoolController.createSchool);
 router.get('/schools', requireAuth, requireAdmin, SchoolController.getAllSchools);
 router.delete('/schools/:schoolId', requireAuth, requireAdmin, SchoolController.deleteSchool);

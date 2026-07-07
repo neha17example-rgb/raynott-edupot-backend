@@ -293,6 +293,187 @@ class HallTicketController {
       res.status(500).json({ success: false, error: 'Server error' });
     }
   }
+  /**
+   * Get school information for the school
+   * GET /api/school-info
+   */
+  static async getSchoolInfo(req, res) {
+    try {
+      const schoolId = req.user?.schoolId;
+      
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: 'School ID not found' });
+      }
+      
+      const snapshot = await admin.database()
+        .ref(`schoolInfo/${schoolId}`)
+        .once('value');
+      
+      const data = snapshot.val() || {
+        schoolName: '',
+        schoolAddress: '',
+        schoolAffiliation: ''
+      };
+      
+      res.json({ success: true, data });
+    } catch (error) {
+      console.error('Get School Info Error:', error);
+      res.status(500).json({ success: false, error: 'Server error' });
+    }
+  }
+
+  /**
+   * Save school information
+   * POST /api/school-info
+   */
+  static async saveSchoolInfo(req, res) {
+    try {
+      const schoolId = req.user?.schoolId;
+      const { schoolName, schoolAddress, schoolAffiliation } = req.body;
+      
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: 'School ID not found' });
+      }
+      
+      await admin.database().ref(`schoolInfo/${schoolId}`).set({
+        schoolName: schoolName || '',
+        schoolAddress: schoolAddress || '',
+        schoolAffiliation: schoolAffiliation || '',
+        updatedAt: admin.database.ServerValue.TIMESTAMP
+      });
+      
+      res.json({ 
+        success: true, 
+        data: { schoolName, schoolAddress, schoolAffiliation }
+      });
+    } catch (error) {
+      console.error('Save School Info Error:', error);
+      res.status(500).json({ success: false, error: 'Server error' });
+    }
+  }
+
+  /**
+   * Get hall ticket settings for a specific class/section
+   * GET /api/hallticket-settings/:key
+   */
+  static async getHallTicketSettings(req, res) {
+    try {
+      const schoolId = req.user?.schoolId;
+      const { key } = req.params;
+      
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: 'School ID not found' });
+      }
+      
+      const snapshot = await admin.database()
+        .ref(`hallTicketSettings/${schoolId}/${key}`)
+        .once('value');
+      
+      const data = snapshot.val() || {
+        examTitle: '',
+        examType: '',
+        examDate: '',
+        examTime: '',
+        examDuration: '',
+        subjects: [],
+        instructions: [],
+        studentSignature: "Student's Signature",
+        principalSignature: 'Principal',
+        principalName: '',
+        examController: 'Exam Controller',
+        examControllerName: '',
+      };
+      
+      res.json({ success: true, data });
+    } catch (error) {
+      console.error('Get Hall Ticket Settings Error:', error);
+      res.status(500).json({ success: false, error: 'Server error' });
+    }
+  }
+
+  /**
+   * Save hall ticket settings for a specific class/section
+   * POST /api/hallticket-settings/:key
+   */
+  static async saveHallTicketSettings(req, res) {
+    try {
+      const schoolId = req.user?.schoolId;
+      const { key } = req.params;
+      const settingsData = req.body;
+      
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: 'School ID not found' });
+      }
+      
+      // Validate required fields
+      if (!settingsData) {
+        return res.status(400).json({ success: false, error: 'Settings data required' });
+      }
+      
+      await admin.database()
+        .ref(`hallTicketSettings/${schoolId}/${key}`)
+        .set({
+          ...settingsData,
+          updatedAt: admin.database.ServerValue.TIMESTAMP
+        });
+      
+      res.json({ success: true, data: settingsData });
+    } catch (error) {
+      console.error('Save Hall Ticket Settings Error:', error);
+      res.status(500).json({ success: false, error: 'Server error' });
+    }
+  }
+
+  /**
+   * Get all hall ticket settings for a school
+   * GET /api/hallticket-settings
+   */
+  static async getAllHallTicketSettings(req, res) {
+    try {
+      const schoolId = req.user?.schoolId;
+      
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: 'School ID not found' });
+      }
+      
+      const snapshot = await admin.database()
+        .ref(`hallTicketSettings/${schoolId}`)
+        .once('value');
+      
+      const data = snapshot.val() || {};
+      
+      res.json({ success: true, data });
+    } catch (error) {
+      console.error('Get All Hall Ticket Settings Error:', error);
+      res.status(500).json({ success: false, error: 'Server error' });
+    }
+  }
+
+  /**
+   * Delete hall ticket settings for a class/section
+   * DELETE /api/hallticket-settings/:key
+   */
+  static async deleteHallTicketSettings(req, res) {
+    try {
+      const schoolId = req.user?.schoolId;
+      const { key } = req.params;
+      
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: 'School ID not found' });
+      }
+      
+      await admin.database()
+        .ref(`hallTicketSettings/${schoolId}/${key}`)
+        .remove();
+      
+      res.json({ success: true, message: 'Settings deleted successfully' });
+    } catch (error) {
+      console.error('Delete Hall Ticket Settings Error:', error);
+      res.status(500).json({ success: false, error: 'Server error' });
+    }
+  }
 }
+
+
 
 module.exports = HallTicketController;
