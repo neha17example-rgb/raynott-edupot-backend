@@ -1,3 +1,5 @@
+// routes/studentRoutes.js - Updated with proper middleware
+
 const express = require('express');
 const router = express.Router();
 const AuthController = require('../Controller/AuthController');
@@ -33,6 +35,16 @@ router.delete('/students/:studentId', requireAuth, requireSchoolAccess, StudentC
 router.post('/students/:studentId/installments', requireAuth, requireSchoolAccess, StudentController.addInstallment);
 router.patch('/students/:studentId/installments/:installmentId', requireAuth, requireSchoolAccess, StudentController.updateInstallment);
 router.delete('/students/:studentId/installments/:installmentId', requireAuth, requireSchoolAccess, StudentController.deleteInstallment);
+
+router.post('/class-exams/:grade/:section/subjects', requireAuth, requireSchoolAccess, StudentController.setupClassSubjects);
+router.get('/class-exams/:grade/:section/subjects', requireAuth, requireSchoolAccess, StudentController.getClassSubjects);
+
+
+router.post('/class-exams/:grade/:section/exams', requireAuth, requireSchoolAccess, StudentController.createClassExam);
+router.get('/class-exams/:grade/:section/exams', requireAuth, requireSchoolAccess, StudentController.getClassExams);
+router.put('/class-exams/:grade/:section/:examId/:studentId', requireAuth, requireSchoolAccess, StudentController.updateStudentClassExamMarks);
+router.get('/class-exams/:grade/:section/:studentId', requireAuth, requireSchoolAccess, StudentController.getStudentClassExamMarks);
+router.delete('/class-exams/:grade/:section/exams/:examId', requireAuth, requireSchoolAccess, StudentController.deleteClassExam);
 
 // Marks routes
 router.get('/students/:studentId/marks', requireAuth, requireSchoolAccess, StudentController.getMarks);
@@ -97,7 +109,7 @@ router.post('/halltickets/template/settings', requireAuth, requireAdmin, HallTic
 router.get('/halltickets/export/csv', requireAuth, requireAdmin, HallTicketController.exportHallTicketsCSV);
 
 // ────────────────────────────────────────────────
-// School Information Routes (NEW)
+// School Information Routes
 // ────────────────────────────────────────────────
 
 // Get school information
@@ -107,7 +119,7 @@ router.get('/school-info', requireAuth, requireSchoolAccess, HallTicketControlle
 router.post('/school-info', requireAuth, requireSchoolAccess, HallTicketController.saveSchoolInfo);
 
 // ────────────────────────────────────────────────
-// Hall Ticket Settings Routes (NEW)
+// Hall Ticket Settings Routes
 // ────────────────────────────────────────────────
 
 // Get all hall ticket settings for the school

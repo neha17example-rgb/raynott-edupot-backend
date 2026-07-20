@@ -667,6 +667,180 @@ static async searchStudents(schoolId, criteria = {}) {
       return { success: false, message: err.message };
     }
   }
+
+   /**
+   * Create a new class exam template
+   */
+  // Model/StudentModel.js - Update the createClassExam method
+
+static async createClassExam(schoolId, grade, section, examData) {
+  try {
+    // Generate a unique ID using timestamp + random string
+    const examId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    const examRef = rtdb.ref(
+      `schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}`
+    );
+    
+    const newExam = {
+      id: examId,  // Use the generated unique ID
+      examType: examData.examType,
+      examDate: examData.examDate,
+      subjects: examData.subjects || [],
+      createdAt: admin.database.ServerValue.TIMESTAMP,
+      marks: {} // Will store per-student marks
+    };
+
+    await examRef.set(newExam);
+    
+    return { success: true, examId, exam: newExam };
+  } catch (err) {
+    console.error('Create class exam error:', err);
+    return { success: false, message: err.message };
+  }
+}
+
+  /**
+   * Get all class exams for a specific class
+   */
+  static async getClassExams(schoolId, grade, section) {
+    try {
+      const snapshot = await rtdb.ref(
+        `schools/${schoolId}/classExams/${grade}-${section}/exams`
+      ).once('value');
+      
+      if (!snapshot.exists()) return [];
+      
+      const exams = [];
+      snapshot.forEach(child => {
+        exams.push({ id: child.key, ...child.val() });
+      });
+      
+      return exams;
+    } catch (err) {
+      console.error('Get class exams error:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Update student marks for a specific class exam
+   */
+  static async updateStudentClassExamMarks(
+    schoolId, 
+    grade, 
+    section, 
+    examId, 
+    studentId, 
+    marksData
+  ) {
+    try {
+      const ref = rtdb.ref(
+        `schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}/marks/${studentId}`
+      );
+      
+      // Calculate total and percentage
+      const totalMarks = marksData.reduce((sum, m) => sum + (m.marks || 0), 0);
+      const totalPossible = marksData.reduce((sum, m) => sum + (m.total || 0), 0);
+      const percentage = totalPossible > 0 ? (totalMarks / totalPossible) * 100 : 0;
+      
+      const data = {
+        marks: marksData,
+        totalMarks,
+        percentage: Math.round(percentage * 10) / 10,
+        updatedAt: admin.database.ServerValue.TIMESTAMP
+      };
+      
+      await ref.set(data);
+      return { success: true };
+    } catch (err) {
+      console.error('Update class exam marks error:', err);
+      return { success: false, message: err.message };
+    }
+  }
+
+  /**
+ * Get class subjects
+ */
+static async getClassSubjects(schoolId, grade, section) {
+  try {
+    const snapshot = await rtdb.ref(
+      `schools/${schoolId}/classExams/${grade}-${section}/subjects`
+    ).once('value');
+    
+    if (!snapshot.exists()) return [];
+    
+    const subjects = snapshot.val();
+    // If it's an object with numeric keys, convert to array
+    if (typeof subjects === 'object' && !Array.isArray(subjects)) {
+      return Object.values(subjects);
+    }
+    return Array.isArray(subjects) ? subjects : [];
+  } catch (err) {
+    console.error('Get class subjects error:', err);
+    return [];
+  }
+}
+static async setupClassSubjects(schoolId, grade, section, subjects) {
+  try {
+    // Store subjects as an array at the path
+    await rtdb.ref(
+      `schools/${schoolId}/classExams/${grade}-${section}/subjects`
+    ).set(subjects);
+    
+    return { success: true };
+  } catch (err) {
+    console.error('Setup class subjects error:', err);
+    return { success: false, message: err.message };
+  }
+}
+  /**
+   * Get student's marks for all class exams
+   */
+  static async getStudentClassExamMarks(schoolId, grade, section, studentId) {
+    try {
+      const snapshot = await rtdb.ref(
+        `schools/${schoolId}/classExams/${grade}-${section}/exams`
+      ).once('value');
+      
+      if (!snapshot.exists()) return [];
+      
+      const results = [];
+      snapshot.forEach(examChild => {
+        const examId = examChild.key;
+        const examData = examChild.val();
+        const studentMarks = examData.marks?.[studentId] || null;
+        
+        results.push({
+          examId,
+          examType: examData.examType,
+          examDate: examData.examDate,
+          subjects: examData.subjects,
+          marks: studentMarks
+        });
+      });
+      
+      return results;
+    } catch (err) {
+      console.error('Get student class exam marks error:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Delete a class exam
+   */
+  static async deleteClassExam(schoolId, grade, section, examId) {
+    try {
+      await rtdb.ref(
+        `schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}`
+      ).remove();
+      return { success: true };
+    } catch (err) {
+      console.error('Delete class exam error:', err);
+      return { success: false, message: err.message };
+    }
+  }
 }
 
 module.exports = StudentModel;
