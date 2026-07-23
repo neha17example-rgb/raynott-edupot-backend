@@ -10,6 +10,7 @@ const HallTicketController = require('../Controller/HallTicketController');
 const upload = require('../Middleware/multerMiddleware');
 
 const { requireAuth, requireAdmin, requireSchoolAccess } = require('../Middleware/AuthMiddle');
+const SchoolInfoController = require('../Controller/SchoolInfoController');
 
 // Auth Routes
 router.post('/login', requireAuth, AuthController.login);
@@ -113,10 +114,19 @@ router.get('/halltickets/export/csv', requireAuth, requireAdmin, HallTicketContr
 // ────────────────────────────────────────────────
 
 // Get school information
-router.get('/school-info', requireAuth, requireSchoolAccess, HallTicketController.getSchoolInfo);
+router.get('/school-info', requireAuth, requireSchoolAccess, SchoolInfoController.getSchoolInfo);
 
 // Save school information
-router.post('/school-info', requireAuth, requireSchoolAccess, HallTicketController.saveSchoolInfo);
+router.post('/school-info', requireAuth, requireSchoolAccess, SchoolInfoController.saveSchoolInfo);
+
+// Update school information (partial update)
+router.patch('/school-info', requireAuth, requireSchoolAccess, SchoolInfoController.updateSchoolInfo);
+
+// Delete school information
+router.delete('/school-info', requireAuth, requireAdmin, SchoolInfoController.deleteSchoolInfo);
+
+// Check if school info exists
+router.get('/school-info/exists', requireAuth, requireSchoolAccess, SchoolInfoController.schoolInfoExists);
 
 // ────────────────────────────────────────────────
 // Hall Ticket Settings Routes

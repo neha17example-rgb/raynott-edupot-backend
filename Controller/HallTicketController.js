@@ -293,6 +293,7 @@ class HallTicketController {
       res.status(500).json({ success: false, error: 'Server error' });
     }
   }
+
   /**
    * Get school information for the school
    * GET /api/school-info
@@ -305,19 +306,47 @@ class HallTicketController {
         return res.status(400).json({ success: false, error: 'School ID not found' });
       }
       
+      console.log(`🔍 Fetching school info for: ${schoolId}`);
+      
       const snapshot = await admin.database()
         .ref(`schoolInfo/${schoolId}`)
         .once('value');
       
-      const data = snapshot.val() || {
-        schoolName: '',
-        schoolAddress: '',
-        schoolAffiliation: ''
+      const data = snapshot.val();
+      console.log('📊 Raw data from Firebase:', JSON.stringify(data, null, 2));
+      
+      // If no data exists, create default with ALL fields
+      if (!data) {
+        console.log('⚠️ No school data found, creating default');
+        const defaultData = {
+          schoolName: '',
+          schoolAddress: '',
+          schoolAffiliation: '',
+          schoolEmail: '',
+          schoolPhone: '',
+          updatedAt: admin.database.ServerValue.TIMESTAMP
+        };
+        await admin.database().ref(`schoolInfo/${schoolId}`).set(defaultData);
+        return res.json({ success: true, data: defaultData });
+      }
+      
+      // Ensure ALL fields exist
+      const schoolData = {
+        schoolName: data.schoolName || '',
+        schoolAddress: data.schoolAddress || '',
+        schoolAffiliation: data.schoolAffiliation || '',
+        schoolEmail: data.schoolEmail || '',
+        schoolPhone: data.schoolPhone || '',
+        updatedAt: data.updatedAt || null
       };
       
-      res.json({ success: true, data });
+      console.log('📤 Returning school data:', JSON.stringify(schoolData, null, 2));
+      console.log('📧 Email returned:', schoolData.schoolEmail);
+      console.log('📱 Phone returned:', schoolData.schoolPhone);
+      
+      res.json({ success: true, data: schoolData });
     } catch (error) {
-      console.error('Get School Info Error:', error);
+      console.error('❌ Get School Info Error:', error);
       res.status(500).json({ success: false, error: 'Server error' });
     }
   }
@@ -329,25 +358,117 @@ class HallTicketController {
   static async saveSchoolInfo(req, res) {
     try {
       const schoolId = req.user?.schoolId;
-      const { schoolName, schoolAddress, schoolAffiliation } = req.body;
+      
+      // Log the ENTIRE request body
+      console.log('📝 FULL REQUEST BODY:', JSON.stringify(req.body, null, 2));
+      console.log('📝 REQUEST BODY KEYS:', Object.keys(req.body));
+      console.log('📝 REQUEST BODY TYPE:', typeof req.body);
+      
+      // Extract fields - handle both JSON and FormData
+      let schoolName, schoolAddress, schoolAffiliation, schoolEmail, schoolPhone;
+      
+      // If the body is already an object with the fields
+      if (req.body && typeof req.body === 'object') {
+        schoolName = req.body.schoolName;
+        schoolAddress = req.body.schoolAddress;
+        schoolAffiliation = req.body.schoolAffiliation;
+        schoolEmail = req.body.schoolEmail;
+        schoolPhone = req.body.schoolPhone;
+        
+        // Also check if fields are nested (sometimes happens with FormData)
+        if (!schoolName && req.body.schoolName !== undefined) schoolName = req.body.schoolName;
+        if (!schoolAddress && req.body.schoolAddress !== undefined) schoolAddress = req.body.schoolAddress;
+        if (!schoolAffiliation && req.body.schoolAffiliation !== undefined) schoolAffiliation = req.body.schoolAffiliation;
+        if (!schoolEmail && req.body.schoolEmail !== undefined) schoolEmail = req.body.schoolEmail;
+        if (!schoolPhone && req.body.schoolPhone !== undefined) schoolPhone = req.body.schoolPhone;
+      }
+      
+      console.log(`📝 Saving school info for schoolId: ${schoolId}`);
+      console.log('📝 Individual fields:');
+      console.log('  - schoolName:', schoolName);
+      console.log('  - schoolAddress:', schoolAddress);
+      console.log('  - schoolAffiliation:', schoolAffiliation);
+      console.log('  - schoolEmail:', schoolEmail);
+      console.log('  - schoolPhone:', schoolPhone);
       
       if (!schoolId) {
         return res.status(400).json({ success: false, error: 'School ID not found' });
       }
       
-      await admin.database().ref(`schoolInfo/${schoolId}`).set({
+      // CRITICAL: Make sure ALL fields are included
+      const schoolData = {
         schoolName: schoolName || '',
         schoolAddress: schoolAddress || '',
         schoolAffiliation: schoolAffiliation || '',
+        schoolEmail: schoolEmail || '',
+        schoolPhone: schoolPhone || '',
         updatedAt: admin.database.ServerValue.TIMESTAMP
-      });
+      };
       
+      console.log('📤 Data to save:', JSON.stringify(schoolData, null, 2));
+      
+      // Use set to completely replace the data (ensures all fields are written)
+      await admin.database().ref(`schoolInfo/${schoolId}`).set(schoolData);
+      
+      // Read back to verify
+      const verifySnapshot = await admin.database()
+        .ref(`schoolInfo/${schoolId}`)
+        .once('value');
+      const savedData = verifySnapshot.val();
+      
+      console.log('✅ Verified saved data:', JSON.stringify(savedData, null, 2));
+      console.log('📧 Email in saved data:', savedData?.schoolEmail);
+      console.log('📱 Phone in saved data:', savedData?.schoolPhone);
+      
+      // Return the complete data
       res.json({ 
         success: true, 
-        data: { schoolName, schoolAddress, schoolAffiliation }
+        data: {
+          schoolName: savedData?.schoolName || '',
+          schoolAddress: savedData?.schoolAddress || '',
+          schoolAffiliation: savedData?.schoolAffiliation || '',
+          schoolEmail: savedData?.schoolEmail || '',
+          schoolPhone: savedData?.schoolPhone || ''
+        }
       });
     } catch (error) {
-      console.error('Save School Info Error:', error);
+      console.error('❌ Save School Info Error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message || 'Failed to save school information'
+      });
+    }
+  }
+
+  /**
+   * Save hall ticket settings for a specific class/section
+   * POST /api/hallticket-settings/:key
+   */
+  static async saveHallTicketSettings(req, res) {
+    try {
+      const schoolId = req.user?.schoolId;
+      const { key } = req.params;
+      const settingsData = req.body;
+      
+      if (!schoolId) {
+        return res.status(400).json({ success: false, error: 'School ID not found' });
+      }
+      
+      // Validate required fields
+      if (!settingsData) {
+        return res.status(400).json({ success: false, error: 'Settings data required' });
+      }
+      
+      await admin.database()
+        .ref(`hallTicketSettings/${schoolId}/${key}`)
+        .set({
+          ...settingsData,
+          updatedAt: admin.database.ServerValue.TIMESTAMP
+        });
+      
+      res.json({ success: true, data: settingsData });
+    } catch (error) {
+      console.error('Save Hall Ticket Settings Error:', error);
       res.status(500).json({ success: false, error: 'Server error' });
     }
   }
@@ -387,39 +508,6 @@ class HallTicketController {
       res.json({ success: true, data });
     } catch (error) {
       console.error('Get Hall Ticket Settings Error:', error);
-      res.status(500).json({ success: false, error: 'Server error' });
-    }
-  }
-
-  /**
-   * Save hall ticket settings for a specific class/section
-   * POST /api/hallticket-settings/:key
-   */
-  static async saveHallTicketSettings(req, res) {
-    try {
-      const schoolId = req.user?.schoolId;
-      const { key } = req.params;
-      const settingsData = req.body;
-      
-      if (!schoolId) {
-        return res.status(400).json({ success: false, error: 'School ID not found' });
-      }
-      
-      // Validate required fields
-      if (!settingsData) {
-        return res.status(400).json({ success: false, error: 'Settings data required' });
-      }
-      
-      await admin.database()
-        .ref(`hallTicketSettings/${schoolId}/${key}`)
-        .set({
-          ...settingsData,
-          updatedAt: admin.database.ServerValue.TIMESTAMP
-        });
-      
-      res.json({ success: true, data: settingsData });
-    } catch (error) {
-      console.error('Save Hall Ticket Settings Error:', error);
       res.status(500).json({ success: false, error: 'Server error' });
     }
   }
@@ -473,7 +561,5 @@ class HallTicketController {
     }
   }
 }
-
-
 
 module.exports = HallTicketController;
