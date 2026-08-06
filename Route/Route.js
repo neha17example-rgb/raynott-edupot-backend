@@ -62,6 +62,15 @@ router.post('/students/:studentId/assessments/records', requireAuth, requireScho
 router.patch('/students/:studentId/assessments/records/:assessmentId', requireAuth, requireSchoolAccess, StudentController.updateAssessment);
 router.delete('/students/:studentId/assessments/records/:assessmentId', requireAuth, requireSchoolAccess, StudentController.deleteAssessment);
 
+router.get('/attendance',requireAuth,requireSchoolAccess,StudentController.getAttendance);
+router.post('/attendance',requireAuth,requireSchoolAccess,StudentController.saveAttendance)
+router.get('/attendance/student/:studentId',requireAuth,requireSchoolAccess,StudentController.getStudentAttendanceSummary)
+router.get('/attendance/report/class/:classId',requireAuth,requireSchoolAccess,StudentController.getClassAttendanceReport)
+router.get('/attendance/stats/monthly',requireAuth,requireSchoolAccess,StudentController.getMonthlyAttendanceStats)
+router.post('/attendance/bulk',requireAuth,requireSchoolAccess,StudentController.bulkMarkAttendance)
+router.post('/attendance/report/csv',requireAuth,requireSchoolAccess,StudentController.exportAttendanceCSV)
+
+
 // ────────────────────────────────────────────────
 // Teacher Routes
 // ────────────────────────────────────────────────

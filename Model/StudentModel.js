@@ -4,6 +4,348 @@ class StudentModel {
   static STUDENTS_REF = (schoolId) => `schools/${schoolId}/students`;
   static COUNTERS_REF = (schoolId) => `counters/schools/${schoolId}/studentCounter`;
 
+  // Model/StudentModel.js - Add these methods to the StudentModel class
+
+  // ────────────────────────────────────────────────
+  // Student Attendance Management
+  // ────────────────────────────────────────────────
+
+  static ATTENDANCE_REF = (schoolId, date) => 
+    `schools/${schoolId}/attendance/${date}`;
+
+  /**
+   * Get attendance for a specific date and class
+   * @param {string} schoolId - School ID
+   * @param {string} date - Date in YYYY-MM-DD format
+   * @param {string} classFilter - Class filter (e.g., "10-A" or "all")
+   * @returns {Promise<Array>} - Array of attendance records
+   */
+  static async getAttendance(schoolId, date, classFilter = 'all') {
+    try {
+      const snapshot = await rtdb.ref(this.ATTENDANCE_REF(schoolId, date)).once('value');
+      
+      if (!snapshot.exists()) {
+        return [];
+      }
+
+      const records = [];
+      snapshot.forEach(child => {
+        const record = { id: child.key, ...child.val() };
+        // Apply class filter if not 'all'
+        if (classFilter === 'all' || record.class === classFilter) {
+          records.push(record);
+        }
+      });
+
+      return records;
+    } catch (err) {
+      console.error('Get attendance error:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Save attendance records for a date
+   * @param {string} schoolId - School ID
+   * @param {Object} attendanceData - { date, records: [{ studentId, status, class }] }
+   * @returns {Promise<{success: boolean, count: number}>}
+   */
+  static async saveAttendance(schoolId, attendanceData) {
+    try {
+      const { date, records } = attendanceData;
+      
+      if (!date || !records || !Array.isArray(records) || records.length === 0) {
+        throw new Error('Invalid attendance data');
+      }
+
+      const ref = rtdb.ref(this.ATTENDANCE_REF(schoolId, date));
+      
+      // Prepare data for batch update
+      const updates = {};
+      records.forEach(record => {
+        if (!record.studentId || !record.status) {
+          throw new Error('Each record must have studentId and status');
+        }
+        updates[record.studentId] = {
+          studentId: record.studentId,
+          status: record.status,
+          class: record.class || '',
+          date: date,
+          updatedAt: admin.database.ServerValue.TIMESTAMP
+        };
+      });
+
+      await ref.update(updates);
+      
+      return { 
+        success: true, 
+        count: records.length,
+        message: `Attendance saved for ${records.length} students`
+      };
+    } catch (err) {
+      console.error('Save attendance error:', err);
+      return { success: false, message: err.message };
+    }
+  }
+
+  /**
+   * Get attendance summary for a student
+   * @param {string} schoolId - School ID
+   * @param {string} studentId - Student ID
+   * @param {string} startDate - Start date (YYYY-MM-DD)
+   * @param {string} endDate - End date (YYYY-MM-DD)
+   * @returns {Promise<Object>} - Attendance summary
+   */
+  static async getStudentAttendanceSummary(schoolId, studentId, startDate, endDate) {
+    try {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const results = [];
+
+      // Iterate through each day in the range
+      const currentDate = new Date(start);
+      while (currentDate <= end) {
+        const dateStr = currentDate.toISOString().split('T')[0];
+        const snapshot = await rtdb.ref(`${this.ATTENDANCE_REF(schoolId, dateStr)}/${studentId}`).once('value');
+        
+        if (snapshot.exists()) {
+          results.push({
+            date: dateStr,
+            status: snapshot.val().status,
+            ...snapshot.val()
+          });
+        }
+        
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      const totalDays = results.length;
+      const presentDays = results.filter(r => r.status === 'present').length;
+      const absentDays = results.filter(r => r.status === 'absent').length;
+
+      return {
+        studentId,
+        startDate,
+        endDate,
+        totalDays,
+        presentDays,
+        absentDays,
+        attendancePercentage: totalDays > 0 ? (presentDays / totalDays) * 100 : 0,
+        records: results
+      };
+    } catch (err) {
+      console.error('Get student attendance summary error:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Get attendance report for a class
+   * @param {string} schoolId - School ID
+   * @param {string} classId - Class identifier
+   * @param {string} month - Month (YYYY-MM)
+   * @returns {Promise<Object>} - Class attendance report
+   */
+  static async getClassAttendanceReport(schoolId, classId, month) {
+    try {
+      const [year, monthNum] = month.split('-').map(Number);
+      const daysInMonth = new Date(year, monthNum, 0).getDate();
+      
+      // Get all students in the class
+      const studentsSnapshot = await rtdb.ref(this.STUDENTS_REF(schoolId))
+        .orderByChild('basicInfo/grade')
+        .equalTo(classId)
+        .once('value');
+      
+      const students = [];
+      studentsSnapshot.forEach(child => {
+        students.push({ studentId: child.key, ...child.val() });
+      });
+
+      if (students.length === 0) {
+        return { classId, month, students: [], summary: { totalStudents: 0, totalPresent: 0, totalAbsent: 0 } };
+      }
+
+      const attendanceData = {};
+      
+      // Get attendance for each day of the month
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${year}-${String(monthNum).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const snapshot = await rtdb.ref(this.ATTENDANCE_REF(schoolId, dateStr)).once('value');
+        
+        if (snapshot.exists()) {
+          const dayRecords = snapshot.val();
+          Object.keys(dayRecords).forEach(studentId => {
+            if (!attendanceData[studentId]) {
+              attendanceData[studentId] = { present: 0, absent: 0, total: 0 };
+            }
+            const status = dayRecords[studentId].status;
+            if (status === 'present') {
+              attendanceData[studentId].present++;
+            } else if (status === 'absent') {
+              attendanceData[studentId].absent++;
+            }
+            attendanceData[studentId].total++;
+          });
+        }
+      }
+
+      // Build student reports
+      const studentReports = students.map(student => {
+        const stats = attendanceData[student.studentId] || { present: 0, absent: 0, total: 0 };
+        return {
+          studentId: student.studentId,
+          studentName: student.basicInfo?.name || 'Unknown',
+          rollNumber: student.basicInfo?.admissionNo || student.rollNumber || '-',
+          presentDays: stats.present,
+          absentDays: stats.absent,
+          totalDays: stats.total,
+          attendancePercentage: stats.total > 0 ? (stats.present / stats.total) * 100 : 0
+        };
+      });
+
+      const totalPresent = studentReports.reduce((sum, s) => sum + s.presentDays, 0);
+      const totalAbsent = studentReports.reduce((sum, s) => sum + s.absentDays, 0);
+      const totalDays = studentReports.reduce((sum, s) => sum + s.totalDays, 0);
+
+      return {
+        classId,
+        month,
+        students: studentReports,
+        summary: {
+          totalStudents: students.length,
+          totalPresent,
+          totalAbsent,
+          totalDays,
+          overallAttendancePercentage: totalDays > 0 ? (totalPresent / totalDays) * 100 : 0
+        }
+      };
+    } catch (err) {
+      console.error('Get class attendance report error:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Get monthly attendance statistics
+   * @param {string} schoolId - School ID
+   * @param {string} month - Month (YYYY-MM)
+   * @param {string} classFilter - Optional class filter
+   * @returns {Promise<Object>} - Monthly statistics
+   */
+  static async getMonthlyAttendanceStats(schoolId, month, classFilter = 'all') {
+    try {
+      const [year, monthNum] = month.split('-').map(Number);
+      const daysInMonth = new Date(year, monthNum, 0).getDate();
+      
+      let totalStudents = 0;
+      let totalPresent = 0;
+      let totalAbsent = 0;
+      let dailyStats = [];
+
+      // Get all students (filtered by class if needed)
+      let studentsSnapshot;
+      if (classFilter !== 'all') {
+        studentsSnapshot = await rtdb.ref(this.STUDENTS_REF(schoolId))
+          .orderByChild('basicInfo/grade')
+          .equalTo(classFilter)
+          .once('value');
+      } else {
+        studentsSnapshot = await rtdb.ref(this.STUDENTS_REF(schoolId)).once('value');
+      }
+      
+      if (studentsSnapshot.exists()) {
+        studentsSnapshot.forEach(() => totalStudents++);
+      }
+
+      // Get daily attendance
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${year}-${String(monthNum).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const snapshot = await rtdb.ref(this.ATTENDANCE_REF(schoolId, dateStr)).once('value');
+        
+        let dayPresent = 0;
+        let dayAbsent = 0;
+        
+        if (snapshot.exists()) {
+          const records = snapshot.val();
+          Object.values(records).forEach(record => {
+            if (classFilter === 'all' || record.class === classFilter) {
+              if (record.status === 'present') dayPresent++;
+              else if (record.status === 'absent') dayAbsent++;
+            }
+          });
+        }
+        
+        dailyStats.push({
+          date: dateStr,
+          present: dayPresent,
+          absent: dayAbsent,
+          total: dayPresent + dayAbsent
+        });
+        
+        totalPresent += dayPresent;
+        totalAbsent += dayAbsent;
+      }
+
+      return {
+        month,
+        classFilter,
+        totalStudents,
+        totalPresent,
+        totalAbsent,
+        totalAttendanceDays: daysInMonth,
+        averageDailyAttendance: totalStudents > 0 ? (totalPresent / (totalStudents * daysInMonth)) * 100 : 0,
+        dailyStats
+      };
+    } catch (err) {
+      console.error('Get monthly attendance stats error:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Bulk mark attendance for multiple students
+   * @param {string} schoolId - School ID
+   * @param {Object} bulkData - { date, class, attendance: [{ studentId, status }] }
+   * @returns {Promise<{success: boolean, count: number}>}
+   */
+  static async bulkMarkAttendance(schoolId, bulkData) {
+    try {
+      const { date, attendance } = bulkData;
+      
+      if (!date || !attendance || !Array.isArray(attendance) || attendance.length === 0) {
+        throw new Error('Invalid bulk attendance data');
+      }
+
+      const ref = rtdb.ref(this.ATTENDANCE_REF(schoolId, date));
+      const updates = {};
+      
+      attendance.forEach(record => {
+        if (!record.studentId || !record.status) {
+          throw new Error('Each record must have studentId and status');
+        }
+        updates[record.studentId] = {
+          studentId: record.studentId,
+          status: record.status,
+          class: bulkData.class || '',
+          date: date,
+          updatedAt: admin.database.ServerValue.TIMESTAMP
+        };
+      });
+
+      await ref.update(updates);
+      
+      return { 
+        success: true, 
+        count: attendance.length,
+        message: `Bulk attendance marked for ${attendance.length} students`
+      };
+    } catch (err) {
+      console.error('Bulk mark attendance error:', err);
+      return { success: false, message: err.message };
+    }
+  }
+  
   /**
    * Generate sequential student ID per school: STU0001, STU0002, ...
    */

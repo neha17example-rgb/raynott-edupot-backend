@@ -454,7 +454,290 @@ static async getAllStudents(req, res) {
     const result = await StudentModel.createClassExam(schoolId, grade, section, req.body);
     res.json(result);
   }
+  
+  
+  /**
+   * Get attendance for a specific date
+   * @route GET /attendance?date=YYYY-MM-DD&class=CLASS
+   */
+  static async getAttendance(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
 
+    const { date, class: classFilter } = req.query;
+    
+    if (!date) {
+      return res.status(400).json({ success: false, error: 'Date is required' });
+    }
+
+    try {
+      const records = await StudentModel.getAttendance(schoolId, date, classFilter || 'all');
+      
+      // Get student names for display
+      const students = await StudentModel.listStudents(schoolId);
+      const studentMap = {};
+      students.forEach(s => {
+        studentMap[s.studentId] = s.basicInfo?.name || 'Unknown';
+      });
+
+      const recordsWithNames = records.map(record => ({
+        ...record,
+        studentName: studentMap[record.studentId] || 'Unknown'
+      }));
+
+      // Calculate summary
+      const present = recordsWithNames.filter(r => r.status === 'present').length;
+      const absent = recordsWithNames.filter(r => r.status === 'absent').length;
+
+      res.json({
+        success: true,
+        records: recordsWithNames,
+        summary: {
+          present,
+          absent,
+          total: recordsWithNames.length,
+          date
+        }
+      });
+    } catch (err) {
+      console.error('Get attendance error:', err);
+      res.status(500).json({ success: false, error: 'Failed to fetch attendance' });
+    }
+  }
+
+  /**
+   * Save attendance records
+   * @route POST /attendance
+   */
+  static async saveAttendance(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
+
+    const { date, records, class: classFilter } = req.body;
+
+    if (!date || !records || !Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ success: false, error: 'Invalid attendance data' });
+    }
+
+    try {
+      // Add class info to each record if not present
+      const recordsWithClass = records.map(record => ({
+        ...record,
+        class: record.class || classFilter || ''
+      }));
+
+      const result = await StudentModel.saveAttendance(schoolId, {
+        date,
+        records: recordsWithClass
+      });
+
+      res.json(result);
+    } catch (err) {
+      console.error('Save attendance error:', err);
+      res.status(500).json({ success: false, error: err.message || 'Failed to save attendance' });
+    }
+  }
+
+  /**
+   * Get student attendance summary
+   * @route GET /attendance/student/:studentId?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+   */
+  static async getStudentAttendanceSummary(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
+
+    const { studentId } = req.params;
+    const { startDate, endDate } = req.query;
+
+    if (!studentId || !startDate || !endDate) {
+      return res.status(400).json({ success: false, error: 'Student ID, start date, and end date are required' });
+    }
+
+    try {
+      const summary = await StudentModel.getStudentAttendanceSummary(schoolId, studentId, startDate, endDate);
+      
+      if (!summary) {
+        return res.status(404).json({ success: false, error: 'No attendance records found' });
+      }
+
+      res.json({ success: true, data: summary });
+    } catch (err) {
+      console.error('Get student attendance summary error:', err);
+      res.status(500).json({ success: false, error: 'Failed to fetch attendance summary' });
+    }
+  }
+
+  /**
+   * Get class attendance report
+   * @route GET /attendance/report/class/:classId?month=YYYY-MM
+   */
+  static async getClassAttendanceReport(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
+
+    const { classId } = req.params;
+    const { month } = req.query;
+
+    if (!classId || !month) {
+      return res.status(400).json({ success: false, error: 'Class ID and month are required' });
+    }
+
+    try {
+      const report = await StudentModel.getClassAttendanceReport(schoolId, classId, month);
+      
+      if (!report) {
+        return res.status(404).json({ success: false, error: 'No data found for this class and month' });
+      }
+
+      res.json({ success: true, data: report });
+    } catch (err) {
+      console.error('Get class attendance report error:', err);
+      res.status(500).json({ success: false, error: 'Failed to fetch class attendance report' });
+    }
+  }
+
+  /**
+   * Get monthly attendance statistics
+   * @route GET /attendance/stats/monthly?month=YYYY-MM&class=CLASS
+   */
+  static async getMonthlyAttendanceStats(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
+
+    const { month, class: classFilter } = req.query;
+
+    if (!month) {
+      return res.status(400).json({ success: false, error: 'Month is required' });
+    }
+
+    try {
+      const stats = await StudentModel.getMonthlyAttendanceStats(schoolId, month, classFilter || 'all');
+      
+      if (!stats) {
+        return res.status(404).json({ success: false, error: 'No data found for this month' });
+      }
+
+      res.json({ success: true, data: stats });
+    } catch (err) {
+      console.error('Get monthly attendance stats error:', err);
+      res.status(500).json({ success: false, error: 'Failed to fetch monthly attendance stats' });
+    }
+  }
+
+  /**
+   * Bulk mark attendance
+   * @route POST /attendance/bulk
+   */
+  static async bulkMarkAttendance(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
+
+    const { date, class: classFilter, attendance } = req.body;
+
+    if (!date || !attendance || !Array.isArray(attendance) || attendance.length === 0) {
+      return res.status(400).json({ success: false, error: 'Invalid bulk attendance data' });
+    }
+
+    try {
+      const result = await StudentModel.bulkMarkAttendance(schoolId, {
+        date,
+        class: classFilter || '',
+        attendance
+      });
+
+      res.json(result);
+    } catch (err) {
+      console.error('Bulk mark attendance error:', err);
+      res.status(500).json({ success: false, error: err.message || 'Failed to mark bulk attendance' });
+    }
+  }
+
+  /**
+   * Export attendance report as CSV
+   * @route POST /attendance/export/csv
+   */
+  static async exportAttendanceCSV(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
+
+    const { startDate, endDate, class: classFilter } = req.body;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({ success: false, error: 'Start date and end date are required' });
+    }
+
+    try {
+      // Get all students
+      const students = await StudentModel.listStudents(schoolId);
+      const filteredStudents = classFilter && classFilter !== 'all' 
+        ? students.filter(s => (s.class || s.basicInfo?.grade) === classFilter)
+        : students;
+
+      // Build CSV data
+      const headers = ['Student ID', 'Student Name', 'Roll Number', 'Class'];
+      
+      // Get all dates in range
+      const dates = [];
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const current = new Date(start);
+      while (current <= end) {
+        const dateStr = current.toISOString().split('T')[0];
+        dates.push(dateStr);
+        headers.push(dateStr);
+        current.setDate(current.getDate() + 1);
+      }
+
+      // Get attendance for each student
+      const rows = [];
+      for (const student of filteredStudents) {
+        const row = [
+          student.studentId,
+          student.basicInfo?.name || 'Unknown',
+          student.basicInfo?.admissionNo || student.rollNumber || '-',
+          student.class || student.basicInfo?.grade || '-'
+        ];
+
+        for (const date of dates) {
+          const snapshot = await rtdb.ref(
+            `${StudentModel.ATTENDANCE_REF(schoolId, date)}/${student.studentId}`
+          ).once('value');
+          
+          const status = snapshot.exists() ? snapshot.val().status : 'absent';
+          row.push(status === 'present' ? 'P' : 'A');
+        }
+
+        rows.push(row);
+      }
+
+      // Generate CSV
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.join(','))
+      ].join('\n');
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename=attendance_${startDate}_to_${endDate}.csv`);
+      res.send(csvContent);
+    } catch (err) {
+      console.error('Export attendance CSV error:', err);
+      res.status(500).json({ success: false, error: 'Failed to export attendance' });
+    }
+  }
 }
 
 module.exports = StudentController;
