@@ -46,12 +46,15 @@ router.get('/class-exams/:grade/:section/exams', requireAuth, requireSchoolAcces
 router.put('/class-exams/:grade/:section/:examId/:studentId', requireAuth, requireSchoolAccess, StudentController.updateStudentClassExamMarks);
 router.get('/class-exams/:grade/:section/:studentId', requireAuth, requireSchoolAccess, StudentController.getStudentClassExamMarks);
 router.delete('/class-exams/:grade/:section/exams/:examId', requireAuth, requireSchoolAccess, StudentController.deleteClassExam);
+router.post('/class-exams/:grade/:section/:examId/migrate',requireAuth,requireSchoolAccess,StudentController.migrateExamMarks)
+router.put('/class-exams/:grade/:section/:examId/subjects',requireAuth,requireSchoolAccess,StudentController.updateExamSubjects)
 
 // Marks routes
 router.get('/students/:studentId/marks', requireAuth, requireSchoolAccess, StudentController.getMarks);
 router.post('/students/:studentId/marks/exams', requireAuth, requireSchoolAccess, StudentController.addExam);
 router.delete('/students/:studentId/marks/exams/:examId', requireAuth, requireSchoolAccess, StudentController.deleteExam);
 router.patch('/students/:studentId/marks', requireAuth, requireSchoolAccess, StudentController.updateMarks);
+
 
 // Assessment routes
 router.get('/students/:studentId/assessments', requireAuth, requireSchoolAccess, StudentController.getAssessments);

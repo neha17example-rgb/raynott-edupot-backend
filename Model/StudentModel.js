@@ -1183,6 +1183,108 @@ static async setupClassSubjects(schoolId, grade, section, subjects) {
       return { success: false, message: err.message };
     }
   }
+
+  // Model/StudentModel.js
+
+// Add this method to the StudentModel class
+
+/**
+ * Migrate exam marks to new subject structure
+ * @param {string} schoolId - School ID
+ * @param {string} grade - Grade
+ * @param {string} section - Section
+ * @param {string} examId - Exam ID
+ * @param {Array} newSubjects - New subjects array
+ * @returns {Promise<Object>} - Result
+ */
+static async migrateExamMarks(schoolId, grade, section, examId, newSubjects) {
+  try {
+    const examRef = rtdb.ref(
+      `schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}`
+    );
+    
+    const snapshot = await examRef.once('value');
+    const exam = snapshot.val();
+    
+    if (!exam) {
+      throw new Error('Exam not found');
+    }
+    
+    const marks = exam.marks || {};
+    const updatedMarks = {};
+    
+    // Create a map of subject names to their new total values
+    const subjectMap = {};
+    newSubjects.forEach(sub => {
+      subjectMap[sub.name] = sub.total;
+    });
+    
+    // Update each student's marks
+    for (const [studentId, studentMarks] of Object.entries(marks)) {
+      if (studentMarks.marks && Array.isArray(studentMarks.marks)) {
+        // Update each subject's total
+        const updatedStudentMarks = studentMarks.marks.map(mark => {
+          const newTotal = subjectMap[mark.name];
+          if (newTotal !== undefined) {
+            // Calculate new percentage based on new total
+            const marksObtained = mark.marks || 0;
+            const percentage = newTotal > 0 ? (marksObtained / newTotal) * 100 : 0;
+            
+            return {
+              ...mark,
+              total: newTotal,
+              percentage: Math.round(percentage * 10) / 10,
+              grade: this.calculateGrade(percentage)
+            };
+          }
+          return mark;
+        });
+        
+        // Recalculate totals
+        const totalMarks = updatedStudentMarks.reduce((sum, m) => sum + (m.marks || 0), 0);
+        const totalPossible = updatedStudentMarks.reduce((sum, m) => sum + (m.total || 0), 0);
+        const percentage = totalPossible > 0 ? (totalMarks / totalPossible) * 100 : 0;
+        
+        updatedMarks[studentId] = {
+          marks: updatedStudentMarks,
+          totalMarks: totalMarks,
+          totalPossible: totalPossible,
+          percentage: Math.round(percentage * 10) / 10,
+          updatedAt: admin.database.ServerValue.TIMESTAMP
+        };
+      } else {
+        // If no marks, just copy the data
+        updatedMarks[studentId] = studentMarks;
+      }
+    }
+    
+    // Update the exam with new subjects and migrated marks
+    await examRef.update({
+      subjects: newSubjects,
+      marks: updatedMarks,
+      updatedAt: admin.database.ServerValue.TIMESTAMP
+    });
+    
+    return { success: true };
+  } catch (err) {
+    console.error('Migrate exam marks error:', err);
+    return { success: false, message: err.message };
+  }
+}
+
+/**
+ * Calculate grade based on percentage
+ */
+static calculateGrade(percentage) {
+  if (percentage >= 90) return 'A+';
+  if (percentage >= 80) return 'A';
+  if (percentage >= 70) return 'B+';
+  if (percentage >= 60) return 'B';
+  if (percentage >= 50) return 'C';
+  if (percentage >= 40) return 'D';
+  if (percentage > 0) return 'F';
+  return 'N/A';
+}
 }
 
 module.exports = StudentModel;

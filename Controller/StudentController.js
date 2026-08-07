@@ -1,4 +1,6 @@
+// Controller/StudentController.js
 const StudentModel = require('../Model/StudentModel');
+const { admin, rtdb } = require('../Config/firebaseAdmin'); 
 
 class StudentController {
   static async createStudent(req, res) {
@@ -22,24 +24,22 @@ class StudentController {
     }
   }
 
-  // In StudentController.js - make sure this exists
-static async getAllStudents(req, res) {
-  const schoolId = req.user?.schoolId;
-  if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
-    return res.status(403).json({ error: 'Forbidden' });
+  static async getAllStudents(req, res) {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    try {
+      const students = await StudentModel.listStudents(schoolId);
+      res.json({ success: true, students });
+    } catch (err) {
+      console.error('Get all students error:', err);
+      res.status(500).json({ success: false, error: 'Failed to fetch students' });
+    }
   }
-  try {
-    const students = await StudentModel.listStudents(schoolId);
-    res.json({ success: true, students });
-  } catch (err) {
-    console.error('Get all students error:', err);
-    res.status(500).json({ success: false, error: 'Failed to fetch students' });
-  }
-}
 
   static async getStudent(req, res) {
     const schoolId = req.user?.schoolId;
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -54,7 +54,6 @@ static async getAllStudents(req, res) {
 
   static async updateStudent(req, res) {
     const schoolId = req.user?.schoolId;
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -66,7 +65,6 @@ static async getAllStudents(req, res) {
 
   static async deleteStudent(req, res) {
     const schoolId = req.user?.schoolId;
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -78,7 +76,6 @@ static async getAllStudents(req, res) {
   // === Fees Installment CRUD ===
   static async addInstallment(req, res) {
     const schoolId = req.user?.schoolId;
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -97,18 +94,14 @@ static async getAllStudents(req, res) {
     console.log("  studentId    :", studentId);
     console.log("  installmentId:", installmentId);
     console.log("  updates      :", updates);
-    console.log("  user         :", req.user?.email || req.user?.uid || "unknown");
 
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       console.log("→ Forbidden - missing schoolId or role");
       return res.status(403).json({ error: 'Forbidden' });
     }
 
     const result = await StudentModel.updateInstallment(schoolId, studentId, installmentId, updates);
-
     console.log("→ Result:", result);
-
     res.json(result);
   }
 
@@ -120,25 +113,20 @@ static async getAllStudents(req, res) {
     console.log("  schoolId      :", schoolId);
     console.log("  studentId     :", studentId);
     console.log("  installmentId :", installmentId);
-    console.log("  type of id    :", typeof installmentId);
 
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       console.log("→ Forbidden");
       return res.status(403).json({ error: 'Forbidden' });
     }
 
     const result = await StudentModel.deleteInstallment(schoolId, studentId, installmentId);
-
     console.log("→ Delete result:", result);
-
     res.json(result);
   }
 
   // === Marks (full marks object) ===
   static async getMarks(req, res) {
     const schoolId = req.user?.schoolId;
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -158,7 +146,6 @@ static async getAllStudents(req, res) {
 
   static async addExam(req, res) {
     const schoolId = req.user?.schoolId;
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -180,13 +167,11 @@ static async getAllStudents(req, res) {
 
   static async deleteExam(req, res) {
     const schoolId = req.user?.schoolId;
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
     const { studentId, examId } = req.params;
-
     const result = await StudentModel.deleteExam(schoolId, studentId, examId);
 
     if (result.success) {
@@ -198,7 +183,6 @@ static async getAllStudents(req, res) {
   
   static async updateMarks(req, res) {
     const schoolId = req.user?.schoolId;
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -209,13 +193,10 @@ static async getAllStudents(req, res) {
 
   /**
    * Search students by multiple criteria
-   * @route GET /students/search
-   * @access School users only
    */
   static async searchStudents(req, res) {
     const schoolId = req.user?.schoolId;
 
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({
         success: false,
@@ -225,7 +206,6 @@ static async getAllStudents(req, res) {
 
     try {
       const criteria = req.query;
-      // Optional: clean up empty strings
       Object.keys(criteria).forEach(key => {
         if (criteria[key] === '') delete criteria[key];
       });
@@ -248,10 +228,8 @@ static async getAllStudents(req, res) {
   }
 
   // === Assessment Reports ===
-  
   static async getAssessments(req, res) {
     const schoolId = req.user?.schoolId;
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -268,7 +246,6 @@ static async getAllStudents(req, res) {
 
   static async addAssessmentCategory(req, res) {
     const schoolId = req.user?.schoolId;
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -285,7 +262,6 @@ static async getAllStudents(req, res) {
 
   static async updateAssessmentCategory(req, res) {
     const schoolId = req.user?.schoolId;
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -297,7 +273,6 @@ static async getAllStudents(req, res) {
 
   static async deleteAssessmentCategory(req, res) {
     const schoolId = req.user?.schoolId;
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -309,7 +284,6 @@ static async getAllStudents(req, res) {
 
   static async addAssessment(req, res) {
     const schoolId = req.user?.schoolId;
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -326,7 +300,6 @@ static async getAllStudents(req, res) {
 
   static async updateAssessment(req, res) {
     const schoolId = req.user?.schoolId;
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -338,7 +311,6 @@ static async getAllStudents(req, res) {
 
   static async deleteAssessment(req, res) {
     const schoolId = req.user?.schoolId;
-    // Allow both school_admin AND school_user
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -348,7 +320,11 @@ static async getAllStudents(req, res) {
     res.json(result);
   }
 
-  // Create class exam
+  // === Class Exam Management ===
+
+  /**
+   * Create class exam - Updated to fetch subjects from database
+   */
   static async createClassExam(req, res) {
     const schoolId = req.user?.schoolId;
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
@@ -356,11 +332,49 @@ static async getAllStudents(req, res) {
     }
 
     const { grade, section } = req.params;
-    const result = await StudentModel.createClassExam(schoolId, grade, section, req.body);
-    res.json(result);
+    
+    try {
+      // ⭐ Fetch subjects from database first
+      const subjectsSnapshot = await rtdb.ref(
+        `schools/${schoolId}/classExams/${grade}-${section}/subjects`
+      ).once('value');
+      
+      let subjects = [];
+      if (subjectsSnapshot.exists()) {
+        const subjectsData = subjectsSnapshot.val();
+        if (typeof subjectsData === 'object' && !Array.isArray(subjectsData)) {
+          subjects = Object.values(subjectsData);
+        } else if (Array.isArray(subjectsData)) {
+          subjects = subjectsData;
+        }
+      }
+      
+      // Generate exam ID
+      const examId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      const newExam = {
+        id: examId,
+        examType: req.body.examType,
+        examDate: req.body.examDate,
+        subjects: subjects, // ⭐ Use fetched subjects
+        createdAt: admin.database.ServerValue.TIMESTAMP,
+        marks: {}
+      };
+
+      await rtdb.ref(
+        `schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}`
+      ).set(newExam);
+      
+      res.json({ success: true, examId, exam: newExam });
+    } catch (err) {
+      console.error('Create class exam error:', err);
+      res.status(500).json({ success: false, message: err.message });
+    }
   }
 
-  // Get class exams
+  /**
+   * Get class exams - Updated to include subjects
+   */
   static async getClassExams(req, res) {
     const schoolId = req.user?.schoolId;
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
@@ -368,11 +382,54 @@ static async getAllStudents(req, res) {
     }
 
     const { grade, section } = req.params;
-    const exams = await StudentModel.getClassExams(schoolId, grade, section);
-    res.json({ success: true, exams });
+
+    try {
+      // ⭐ Get subjects first
+      let classSubjects = [];
+      const subjectsSnapshot = await rtdb.ref(
+        `schools/${schoolId}/classExams/${grade}-${section}/subjects`
+      ).once('value');
+      
+      if (subjectsSnapshot.exists()) {
+        const subjectsData = subjectsSnapshot.val();
+        if (typeof subjectsData === 'object' && !Array.isArray(subjectsData)) {
+          classSubjects = Object.values(subjectsData);
+        } else if (Array.isArray(subjectsData)) {
+          classSubjects = subjectsData;
+        }
+      }
+      
+      // Get exams
+      const snapshot = await rtdb.ref(
+        `schools/${schoolId}/classExams/${grade}-${section}/exams`
+      ).once('value');
+      
+      if (!snapshot.exists()) {
+        return res.json({ success: true, exams: [] });
+      }
+      
+      const exams = [];
+      snapshot.forEach(child => {
+        const exam = { id: child.key, ...child.val() };
+        
+        // ⭐ Ensure exam has subjects
+        if (!exam.subjects || exam.subjects.length === 0) {
+          exam.subjects = classSubjects;
+        }
+        
+        exams.push(exam);
+      });
+      
+      res.json({ success: true, exams });
+    } catch (err) {
+      console.error('Get class exams error:', err);
+      res.status(500).json({ success: false, error: err.message, exams: [] });
+    }
   }
 
-  // Update student marks for class exam
+  /**
+   * Update student marks for class exam
+   */
   static async updateStudentClassExamMarks(req, res) {
     const schoolId = req.user?.schoolId;
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
@@ -380,13 +437,41 @@ static async getAllStudents(req, res) {
     }
 
     const { grade, section, examId, studentId } = req.params;
-    const result = await StudentModel.updateStudentClassExamMarks(
-      schoolId, grade, section, examId, studentId, req.body.marks
-    );
-    res.json(result);
+    
+    try {
+      const marksData = req.body.marks;
+      
+      if (!marksData || !Array.isArray(marksData)) {
+        return res.status(400).json({ success: false, error: 'Invalid marks data' });
+      }
+      
+      const ref = rtdb.ref(
+        `schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}/marks/${studentId}`
+      );
+      
+      // Calculate total and percentage
+      const totalMarks = marksData.reduce((sum, m) => sum + (m.marks || 0), 0);
+      const totalPossible = marksData.reduce((sum, m) => sum + (m.total || 0), 0);
+      const percentage = totalPossible > 0 ? (totalMarks / totalPossible) * 100 : 0;
+      
+      const data = {
+        marks: marksData,
+        totalMarks,
+        percentage: Math.round(percentage * 10) / 10,
+        updatedAt: admin.database.ServerValue.TIMESTAMP
+      };
+      
+      await ref.set(data);
+      res.json({ success: true });
+    } catch (err) {
+      console.error('Update class exam marks error:', err);
+      res.status(500).json({ success: false, message: err.message });
+    }
   }
 
-  // Get student's class exam marks
+  /**
+   * Get student's marks for all class exams
+   */
   static async getStudentClassExamMarks(req, res) {
     const schoolId = req.user?.schoolId;
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
@@ -394,11 +479,41 @@ static async getAllStudents(req, res) {
     }
 
     const { grade, section, studentId } = req.params;
-    const marks = await StudentModel.getStudentClassExamMarks(schoolId, grade, section, studentId);
-    res.json({ success: true, marks });
+    
+    try {
+      const snapshot = await rtdb.ref(
+        `schools/${schoolId}/classExams/${grade}-${section}/exams`
+      ).once('value');
+      
+      if (!snapshot.exists()) {
+        return res.json({ success: true, marks: [] });
+      }
+      
+      const results = [];
+      snapshot.forEach(examChild => {
+        const examId = examChild.key;
+        const examData = examChild.val();
+        const studentMarks = examData.marks?.[studentId] || null;
+        
+        results.push({
+          examId,
+          examType: examData.examType,
+          examDate: examData.examDate,
+          subjects: examData.subjects,
+          marks: studentMarks
+        });
+      });
+      
+      res.json({ success: true, marks: results });
+    } catch (err) {
+      console.error('Get student class exam marks error:', err);
+      res.status(500).json({ success: false, error: err.message, marks: [] });
+    }
   }
 
-  // Delete class exam
+  /**
+   * Delete class exam
+   */
   static async deleteClassExam(req, res) {
     const schoolId = req.user?.schoolId;
     if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
@@ -406,10 +521,19 @@ static async getAllStudents(req, res) {
     }
 
     const { grade, section, examId } = req.params;
-    const result = await StudentModel.deleteClassExam(schoolId, grade, section, examId);
-    res.json(result);
+    
+    try {
+      await rtdb.ref(
+        `schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}`
+      ).remove();
+      res.json({ success: true });
+    } catch (err) {
+      console.error('Delete class exam error:', err);
+      res.status(500).json({ success: false, message: err.message });
+    }
   }
-   /**
+
+  /**
    * Setup class subjects
    */
   static async setupClassSubjects(req, res) {
@@ -425,8 +549,16 @@ static async getAllStudents(req, res) {
       return res.status(400).json({ success: false, error: 'Subjects array is required' });
     }
 
-    const result = await StudentModel.setupClassSubjects(schoolId, grade, section, subjects);
-    res.json(result);
+    try {
+      await rtdb.ref(
+        `schools/${schoolId}/classExams/${grade}-${section}/subjects`
+      ).set(subjects);
+      
+      res.json({ success: true });
+    } catch (err) {
+      console.error('Setup class subjects error:', err);
+      res.status(500).json({ success: false, message: err.message });
+    }
   }
 
   /**
@@ -439,26 +571,36 @@ static async getAllStudents(req, res) {
     }
 
     const { grade, section } = req.params;
-    const subjects = await StudentModel.getClassSubjects(schoolId, grade, section);
-    res.json({ success: true, subjects });
-  }
-
-  // Override the createClassExam to use class subjects
-  static async createClassExam(req, res) {
-    const schoolId = req.user?.schoolId;
-    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
-      return res.status(403).json({ error: 'Forbidden' });
+    
+    try {
+      const snapshot = await rtdb.ref(
+        `schools/${schoolId}/classExams/${grade}-${section}/subjects`
+      ).once('value');
+      
+      if (!snapshot.exists()) {
+        return res.json({ success: true, subjects: [] });
+      }
+      
+      const subjects = snapshot.val();
+      let subjectsArray = [];
+      
+      if (typeof subjects === 'object' && !Array.isArray(subjects)) {
+        subjectsArray = Object.values(subjects);
+      } else if (Array.isArray(subjects)) {
+        subjectsArray = subjects;
+      }
+      
+      res.json({ success: true, subjects: subjectsArray });
+    } catch (err) {
+      console.error('Get class subjects error:', err);
+      res.status(500).json({ success: false, error: err.message, subjects: [] });
     }
-
-    const { grade, section } = req.params;
-    const result = await StudentModel.createClassExam(schoolId, grade, section, req.body);
-    res.json(result);
   }
-  
-  
+
+  // === Attendance Management ===
+
   /**
    * Get attendance for a specific date
-   * @route GET /attendance?date=YYYY-MM-DD&class=CLASS
    */
   static async getAttendance(req, res) {
     const schoolId = req.user?.schoolId;
@@ -487,7 +629,6 @@ static async getAllStudents(req, res) {
         studentName: studentMap[record.studentId] || 'Unknown'
       }));
 
-      // Calculate summary
       const present = recordsWithNames.filter(r => r.status === 'present').length;
       const absent = recordsWithNames.filter(r => r.status === 'absent').length;
 
@@ -509,7 +650,6 @@ static async getAllStudents(req, res) {
 
   /**
    * Save attendance records
-   * @route POST /attendance
    */
   static async saveAttendance(req, res) {
     const schoolId = req.user?.schoolId;
@@ -524,7 +664,6 @@ static async getAllStudents(req, res) {
     }
 
     try {
-      // Add class info to each record if not present
       const recordsWithClass = records.map(record => ({
         ...record,
         class: record.class || classFilter || ''
@@ -544,7 +683,6 @@ static async getAllStudents(req, res) {
 
   /**
    * Get student attendance summary
-   * @route GET /attendance/student/:studentId?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
    */
   static async getStudentAttendanceSummary(req, res) {
     const schoolId = req.user?.schoolId;
@@ -575,7 +713,6 @@ static async getAllStudents(req, res) {
 
   /**
    * Get class attendance report
-   * @route GET /attendance/report/class/:classId?month=YYYY-MM
    */
   static async getClassAttendanceReport(req, res) {
     const schoolId = req.user?.schoolId;
@@ -606,7 +743,6 @@ static async getAllStudents(req, res) {
 
   /**
    * Get monthly attendance statistics
-   * @route GET /attendance/stats/monthly?month=YYYY-MM&class=CLASS
    */
   static async getMonthlyAttendanceStats(req, res) {
     const schoolId = req.user?.schoolId;
@@ -636,7 +772,6 @@ static async getAllStudents(req, res) {
 
   /**
    * Bulk mark attendance
-   * @route POST /attendance/bulk
    */
   static async bulkMarkAttendance(req, res) {
     const schoolId = req.user?.schoolId;
@@ -666,7 +801,6 @@ static async getAllStudents(req, res) {
 
   /**
    * Export attendance report as CSV
-   * @route POST /attendance/export/csv
    */
   static async exportAttendanceCSV(req, res) {
     const schoolId = req.user?.schoolId;
@@ -681,16 +815,13 @@ static async getAllStudents(req, res) {
     }
 
     try {
-      // Get all students
       const students = await StudentModel.listStudents(schoolId);
       const filteredStudents = classFilter && classFilter !== 'all' 
         ? students.filter(s => (s.class || s.basicInfo?.grade) === classFilter)
         : students;
 
-      // Build CSV data
       const headers = ['Student ID', 'Student Name', 'Roll Number', 'Class'];
       
-      // Get all dates in range
       const dates = [];
       const start = new Date(startDate);
       const end = new Date(endDate);
@@ -702,7 +833,6 @@ static async getAllStudents(req, res) {
         current.setDate(current.getDate() + 1);
       }
 
-      // Get attendance for each student
       const rows = [];
       for (const student of filteredStudents) {
         const row = [
@@ -724,7 +854,6 @@ static async getAllStudents(req, res) {
         rows.push(row);
       }
 
-      // Generate CSV
       const csvContent = [
         headers.join(','),
         ...rows.map(row => row.join(','))
@@ -738,6 +867,63 @@ static async getAllStudents(req, res) {
       res.status(500).json({ success: false, error: 'Failed to export attendance' });
     }
   }
+
+static async migrateExamMarks(req, res) {
+  const schoolId = req.user?.schoolId;
+  if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+    return res.status(403).json({ success: false, error: 'Forbidden' });
+  }
+
+  const { grade, section, examId } = req.params;
+  const { subjects } = req.body;
+
+  if (!subjects || !Array.isArray(subjects) || subjects.length === 0) {
+    return res.status(400).json({ success: false, error: 'Subjects array is required' });
+  }
+
+  try {
+    const result = await StudentModel.migrateExamMarks(schoolId, grade, section, examId, subjects);
+    
+    if (result.success) {
+      res.json({ success: true, message: 'Marks migrated successfully' });
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (err) {
+    console.error('Migrate exam marks error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+static async updateExamSubjects(req, res) {
+  const schoolId = req.user?.schoolId;
+  if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+    return res.status(403).json({ success: false, error: 'Forbidden' });
+  }
+
+  const { grade, section, examId } = req.params;
+  const { subjects } = req.body;
+
+  if (!subjects || !Array.isArray(subjects) || subjects.length === 0) {
+    return res.status(400).json({ success: false, error: 'Subjects array is required' });
+  }
+
+  try {
+    // Update the exam with new subjects
+    const examRef = rtdb.ref(
+      `schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}`
+    );
+    
+    await examRef.update({
+      subjects: subjects,
+      updatedAt: admin.database.ServerValue.TIMESTAMP
+    });
+    
+    res.json({ success: true, message: 'Exam subjects updated successfully' });
+  } catch (err) {
+    console.error('Update exam subjects error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
 }
 
 module.exports = StudentController;
