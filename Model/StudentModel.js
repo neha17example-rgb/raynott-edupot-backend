@@ -4,89 +4,85 @@ class StudentModel {
   static STUDENTS_REF = (schoolId) => `schools/${schoolId}/students`;
   static COUNTERS_REF = (schoolId) => `counters/schools/${schoolId}/studentCounter`;
 
-  // Model/StudentModel.js - Add these methods to the StudentModel class
 
-  // ────────────────────────────────────────────────
-  // Student Attendance Management
-  // ────────────────────────────────────────────────
 
   static ATTENDANCE_REF = (schoolId, date) => 
     `schools/${schoolId}/attendance/${date}`;
 
-  /**
-   * Get attendance for a specific date and class
-   * @param {string} schoolId - School ID
-   * @param {string} date - Date in YYYY-MM-DD format
-   * @param {string} classFilter - Class filter (e.g., "10-A" or "all")
-   * @returns {Promise<Array>} - Array of attendance records
-   */
-  static async getAttendance(schoolId, date, classFilter = 'all') {
-    try {
-      const snapshot = await rtdb.ref(this.ATTENDANCE_REF(schoolId, date)).once('value');
+  // /**
+  //  * Get attendance for a specific date and class
+  //  * @param {string} schoolId - School ID
+  //  * @param {string} date - Date in YYYY-MM-DD format
+  //  * @param {string} classFilter - Class filter (e.g., "10-A" or "all")
+  //  * @returns {Promise<Array>} - Array of attendance records
+  //  */
+  // static async getAttendance(schoolId, date, classFilter = 'all') {
+  //   try {
+  //     const snapshot = await rtdb.ref(this.ATTENDANCE_REF(schoolId, date)).once('value');
       
-      if (!snapshot.exists()) {
-        return [];
-      }
+  //     if (!snapshot.exists()) {
+  //       return [];
+  //     }
 
-      const records = [];
-      snapshot.forEach(child => {
-        const record = { id: child.key, ...child.val() };
-        // Apply class filter if not 'all'
-        if (classFilter === 'all' || record.class === classFilter) {
-          records.push(record);
-        }
-      });
+  //     const records = [];
+  //     snapshot.forEach(child => {
+  //       const record = { id: child.key, ...child.val() };
+  //       // Apply class filter if not 'all'
+  //       if (classFilter === 'all' || record.class === classFilter) {
+  //         records.push(record);
+  //       }
+  //     });
 
-      return records;
-    } catch (err) {
-      console.error('Get attendance error:', err);
-      return [];
-    }
-  }
+  //     return records;
+  //   } catch (err) {
+  //     console.error('Get attendance error:', err);
+  //     return [];
+  //   }
+  // }
 
-  /**
-   * Save attendance records for a date
-   * @param {string} schoolId - School ID
-   * @param {Object} attendanceData - { date, records: [{ studentId, status, class }] }
-   * @returns {Promise<{success: boolean, count: number}>}
-   */
-  static async saveAttendance(schoolId, attendanceData) {
-    try {
-      const { date, records } = attendanceData;
+  // /**
+  //  * Save attendance records for a date
+  //  * @param {string} schoolId - School ID
+  //  * @param {Object} attendanceData - { date, records: [{ studentId, status, class }] }
+  //  * @returns {Promise<{success: boolean, count: number}>}
+  //  */
+  // static async saveAttendance(schoolId, attendanceData) {
+  //   try {
+  //     const { date, records } = attendanceData;
       
-      if (!date || !records || !Array.isArray(records) || records.length === 0) {
-        throw new Error('Invalid attendance data');
-      }
+  //     if (!date || !records || !Array.isArray(records) || records.length === 0) {
+  //       throw new Error('Invalid attendance data');
+  //     }
 
-      const ref = rtdb.ref(this.ATTENDANCE_REF(schoolId, date));
+  //     const ref = rtdb.ref(this.ATTENDANCE_REF(schoolId, date));
       
-      // Prepare data for batch update
-      const updates = {};
-      records.forEach(record => {
-        if (!record.studentId || !record.status) {
-          throw new Error('Each record must have studentId and status');
-        }
-        updates[record.studentId] = {
-          studentId: record.studentId,
-          status: record.status,
-          class: record.class || '',
-          date: date,
-          updatedAt: admin.database.ServerValue.TIMESTAMP
-        };
-      });
+  //     // Prepare data for batch update
+  //     const updates = {};
+  //     records.forEach(record => {
+  //       if (!record.studentId || !record.status) {
+  //         throw new Error('Each record must have studentId and status');
+  //       }
+  //       updates[record.studentId] = {
+  //         studentId: record.studentId,
+  //         status: record.status,
+  //         class: record.class || '',
+  //         date: date,
+  //         updatedAt: admin.database.ServerValue.TIMESTAMP
+  //       };
+  //     });
 
-      await ref.update(updates);
+  //     await ref.update(updates);
       
-      return { 
-        success: true, 
-        count: records.length,
-        message: `Attendance saved for ${records.length} students`
-      };
-    } catch (err) {
-      console.error('Save attendance error:', err);
-      return { success: false, message: err.message };
-    }
-  }
+  //     return { 
+  //       success: true, 
+  //       count: records.length,
+  //       message: `Attendance saved for ${records.length} students`
+  //     };
+  //   } catch (err) {
+  //     console.error('Save attendance error:', err);
+  //     return { success: false, message: err.message };
+  //   }
+  // }
 
   /**
    * Get attendance summary for a student
@@ -1284,6 +1280,175 @@ static calculateGrade(percentage) {
   if (percentage >= 40) return 'D';
   if (percentage > 0) return 'F';
   return 'N/A';
+}
+
+// Model/StudentModel.js
+
+// At the top of the file, ensure the ATTENDANCE_REF is correct
+static ATTENDANCE_REF = (schoolId, date) => 
+  `schools/${schoolId}/attendance/${date}`;
+
+/**
+ * Get attendance for a specific date and class - COMPLETELY REWRITTEN
+ */
+static async getAttendance(schoolId, date, classFilter = 'all') {
+  try {
+    const refPath = this.ATTENDANCE_REF(schoolId, date);
+    console.log(`📥 [MODEL] Fetching attendance from: ${refPath}`);
+    
+    const snapshot = await rtdb.ref(refPath).once('value');
+    
+    console.log(`📥 [MODEL] Snapshot exists: ${snapshot.exists()}`);
+    
+    if (!snapshot.exists()) {
+      console.log(`📥 [MODEL] No attendance found for ${date}`);
+      return [];
+    }
+
+    const allRecords = snapshot.val();
+    console.log(`📥 [MODEL] Raw records from Firebase:`, JSON.stringify(allRecords, null, 2));
+    
+    // Check if it's a holiday (stored at the root level)
+    if (allRecords.isHoliday === true) {
+      console.log(`📥 [MODEL] Holiday found: ${allRecords.reason}`);
+      return [{
+        isHoliday: true,
+        reason: allRecords.reason || 'Holiday',
+        date: date
+      }];
+    }
+
+    const records = [];
+    
+    // CRITICAL FIX: Iterate over the keys of allRecords
+    Object.keys(allRecords).forEach(studentId => {
+      const record = allRecords[studentId];
+      
+      console.log(`📥 [MODEL] Processing record for ${studentId}:`, record);
+      
+      // Skip if not a valid attendance record
+      if (!record || typeof record !== 'object') {
+        console.warn(`⚠️ [MODEL] Invalid record for student ${studentId}:`, record);
+        return;
+      }
+      
+      // Skip if no status
+      if (!record.status) {
+        console.warn(`⚠️ [MODEL] No status for student ${studentId}:`, record);
+        return;
+      }
+      
+      // CRITICAL FIX: Check if the record matches the class filter
+      let matchesClass = false;
+      
+      if (classFilter === 'all') {
+        matchesClass = true;
+      } else if (classFilter.includes('-')) {
+        // Filter is like "UKG-A" or "9-A" - split and compare class AND section
+        const [filterClass, filterSection] = classFilter.split('-');
+        matchesClass = record.class === filterClass && record.section === filterSection;
+        console.log(`📥 [MODEL] Comparing: ${record.class}-${record.section} vs ${filterClass}-${filterSection} => ${matchesClass}`);
+      } else {
+        // Filter is just a class name like "9"
+        matchesClass = record.class === classFilter;
+      }
+      
+      if (matchesClass) {
+        records.push({
+          studentId: studentId, // Use the key as studentId
+          status: record.status, // Preserve exact status
+          class: record.class || '',
+          section: record.section || '',
+          date: record.date || date,
+          updatedAt: record.updatedAt || null
+        });
+      }
+    });
+
+    console.log(`📥 [MODEL] Returning ${records.length} filtered records`);
+    console.log(`📥 [MODEL] Records:`, JSON.stringify(records, null, 2));
+    
+    return records;
+  } catch (err) {
+    console.error('❌ [MODEL] Get attendance error:', err);
+    return [];
+  }
+}
+
+/**
+ * Save attendance records - FIXED with better debugging
+ */
+static async saveAttendance(schoolId, attendanceData) {
+  try {
+    const { date, records } = attendanceData;
+    
+    console.log(`📤 [MODEL] Saving attendance for school: ${schoolId}, date: ${date}`);
+    console.log(`📤 [MODEL] Records count: ${records?.length || 0}`);
+    
+    if (!date || !records || !Array.isArray(records) || records.length === 0) {
+      throw new Error('Invalid attendance data');
+    }
+
+    // Get the reference path
+    const refPath = this.ATTENDANCE_REF(schoolId, date);
+    console.log(`📤 [MODEL] Ref path: ${refPath}`);
+    
+    const ref = rtdb.ref(refPath);
+    
+    // Prepare data for batch update
+    const updates = {};
+    records.forEach((record, index) => {
+      if (!record.studentId || !record.status) {
+        console.error(`❌ [MODEL] Record ${index} missing studentId or status:`, record);
+        throw new Error(`Each record must have studentId and status. Record ${index} is invalid.`);
+      }
+      
+      // CRITICAL FIX: Preserve the exact status
+      updates[record.studentId] = {
+        studentId: record.studentId,
+        status: record.status, // Keep as is - don't transform
+        class: record.class || '',
+        section: record.section || '',
+        date: date,
+        updatedAt: admin.database.ServerValue.TIMESTAMP
+      };
+      
+      console.log(`📤 [MODEL] Record ${index}: ${record.studentId} -> ${record.status}`);
+    });
+
+    console.log(`📤 [MODEL] Updates object:`, JSON.stringify(updates, null, 2));
+
+    // Write to Firebase
+    await ref.update(updates);
+    
+    console.log(`✅ [MODEL] Saved ${records.length} attendance records for ${date}`);
+    
+    // CRITICAL FIX: Verify the write by reading back immediately
+    const verifySnapshot = await ref.once('value');
+    const verifyData = verifySnapshot.val();
+    console.log(`📤 [MODEL] Verification read:`, JSON.stringify(verifyData, null, 2));
+    
+    // Check if the data was actually written
+    let savedCount = 0;
+    if (verifyData) {
+      Object.keys(verifyData).forEach(key => {
+        if (verifyData[key] && verifyData[key].status) {
+          savedCount++;
+        }
+      });
+    }
+    console.log(`📤 [MODEL] Verification: ${savedCount} records found in database`);
+    
+    return { 
+      success: true, 
+      count: records.length,
+      verified: savedCount,
+      message: `Attendance saved for ${records.length} students`
+    };
+  } catch (err) {
+    console.error('❌ [MODEL] Save attendance error:', err);
+    return { success: false, message: err.message };
+  }
 }
 }
 

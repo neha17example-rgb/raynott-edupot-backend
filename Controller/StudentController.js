@@ -651,35 +651,35 @@ class StudentController {
   /**
    * Save attendance records
    */
-  static async saveAttendance(req, res) {
-    const schoolId = req.user?.schoolId;
-    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
-      return res.status(403).json({ success: false, error: 'Forbidden' });
-    }
+  // static async saveAttendance(req, res) {
+  //   const schoolId = req.user?.schoolId;
+  //   if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+  //     return res.status(403).json({ success: false, error: 'Forbidden' });
+  //   }
 
-    const { date, records, class: classFilter } = req.body;
+  //   const { date, records, class: classFilter } = req.body;
 
-    if (!date || !records || !Array.isArray(records) || records.length === 0) {
-      return res.status(400).json({ success: false, error: 'Invalid attendance data' });
-    }
+  //   if (!date || !records || !Array.isArray(records) || records.length === 0) {
+  //     return res.status(400).json({ success: false, error: 'Invalid attendance data' });
+  //   }
 
-    try {
-      const recordsWithClass = records.map(record => ({
-        ...record,
-        class: record.class || classFilter || ''
-      }));
+  //   try {
+  //     const recordsWithClass = records.map(record => ({
+  //       ...record,
+  //       class: record.class || classFilter || ''
+  //     }));
 
-      const result = await StudentModel.saveAttendance(schoolId, {
-        date,
-        records: recordsWithClass
-      });
+  //     const result = await StudentModel.saveAttendance(schoolId, {
+  //       date,
+  //       records: recordsWithClass
+  //     });
 
-      res.json(result);
-    } catch (err) {
-      console.error('Save attendance error:', err);
-      res.status(500).json({ success: false, error: err.message || 'Failed to save attendance' });
-    }
-  }
+  //     res.json(result);
+  //   } catch (err) {
+  //     console.error('Save attendance error:', err);
+  //     res.status(500).json({ success: false, error: err.message || 'Failed to save attendance' });
+  //   }
+  // }
 
   /**
    * Get student attendance summary
@@ -894,6 +894,7 @@ static async migrateExamMarks(req, res) {
     res.status(500).json({ success: false, error: err.message });
   }
 }
+
 static async updateExamSubjects(req, res) {
   const schoolId = req.user?.schoolId;
   if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
@@ -924,6 +925,228 @@ static async updateExamSubjects(req, res) {
     res.status(500).json({ success: false, error: err.message });
   }
 }
+
+// Model/StudentModel.js
+
+/**
+ * Get attendance for a specific date and class - FIXED
+ */
+static async getAttendance(schoolId, date, classFilter = 'all') {
+  try {
+    const refPath = this.ATTENDANCE_REF(schoolId, date);
+    console.log(`📥 [MODEL] Fetching attendance from: ${refPath}`);
+    
+    const snapshot = await rtdb.ref(refPath).once('value');
+    
+    console.log(`📥 [MODEL] Snapshot exists: ${snapshot.exists()}`);
+    
+    if (!snapshot.exists()) {
+      console.log(`📥 [MODEL] No attendance found for ${date}`);
+      return [];
+    }
+
+    const allRecords = snapshot.val();
+    console.log(`📥 [MODEL] Raw records from Firebase:`, JSON.stringify(allRecords, null, 2));
+    
+    // Check if it's a holiday (stored at the root level)
+    if (allRecords.isHoliday === true) {
+      console.log(`📥 [MODEL] Holiday found: ${allRecords.reason}`);
+      return [{
+        isHoliday: true,
+        reason: allRecords.reason || 'Holiday',
+        date: date
+      }];
+    }
+
+    const records = [];
+    
+    // CRITICAL FIX: Iterate over the keys of allRecords
+    Object.keys(allRecords).forEach(studentId => {
+      const record = allRecords[studentId];
+      
+      // Skip holiday marker
+      if (record.isHoliday === true) return;
+      
+      // Skip if not a valid attendance record
+      if (!record.status) {
+        console.warn(`⚠️ [MODEL] Invalid record for student ${studentId}:`, record);
+        return;
+      }
+      
+      // CRITICAL FIX: Check if the record matches the class filter
+      let matchesClass = false;
+      
+      if (classFilter === 'all') {
+        matchesClass = true;
+      } else if (classFilter.includes('-')) {
+        // Filter is like "9-A" - split and compare class AND section
+        const [filterClass, filterSection] = classFilter.split('-');
+        matchesClass = record.class === filterClass && record.section === filterSection;
+        console.log(`📥 [MODEL] Comparing: ${record.class}-${record.section} vs ${filterClass}-${filterSection} => ${matchesClass}`);
+      } else {
+        // Filter is just a class name like "9"
+        matchesClass = record.class === classFilter;
+      }
+      
+      if (matchesClass) {
+        records.push({
+          studentId: studentId, // Use the key as studentId
+          status: record.status, // Preserve exact status
+          class: record.class || '',
+          section: record.section || '',
+          date: record.date || date,
+          updatedAt: record.updatedAt || null
+        });
+      }
+    });
+
+    console.log(`📥 [MODEL] Returning ${records.length} filtered records`);
+    console.log(`📥 [MODEL] Records:`, JSON.stringify(records, null, 2));
+    
+    return records;
+  } catch (err) {
+    console.error('❌ [MODEL] Get attendance error:', err);
+    return [];
+  }
 }
+
+// Controller/StudentController.js
+
+/**
+ * Get attendance for a specific date - FIXED
+ */
+static async getAttendance(req, res) {
+  const schoolId = req.user?.schoolId;
+  if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+    return res.status(403).json({ success: false, error: 'Forbidden' });
+  }
+
+  const { date, class: classFilter } = req.query;
+  
+  if (!date) {
+    return res.status(400).json({ success: false, error: 'Date is required' });
+  }
+
+  try {
+    console.log(`📥 [CONTROLLER] Getting attendance for school: ${schoolId}, date: ${date}, class: ${classFilter}`);
+    
+    // CRITICAL FIX: Log the full path being queried
+    const refPath = `schools/${schoolId}/attendance/${date}`;
+    console.log(`📥 [CONTROLLER] Querying path: ${refPath}`);
+    
+    const records = await StudentModel.getAttendance(schoolId, date, classFilter || 'all');
+    
+    console.log(`📥 [CONTROLLER] Found ${records.length} attendance records`);
+    
+    // Check if it's a holiday
+    const holidayRecords = records.filter(r => r.isHoliday === true);
+    if (holidayRecords.length > 0) {
+      return res.json({
+        success: true,
+        records: [{
+          isHoliday: true,
+          reason: holidayRecords[0].reason || 'Holiday',
+          date: date
+        }],
+        summary: {
+          present: 0,
+          absent: 0,
+          total: 0,
+          date,
+          isHoliday: true
+        }
+      });
+    }
+
+    // Get student names for display
+    const students = await StudentModel.listStudents(schoolId);
+    const studentMap = {};
+    students.forEach(s => {
+      studentMap[s.studentId] = s.basicInfo?.name || 'Unknown';
+    });
+
+    const recordsWithNames = records.map(record => ({
+      ...record,
+      studentName: studentMap[record.studentId] || 'Unknown'
+    }));
+
+    const present = recordsWithNames.filter(r => r.status === 'present').length;
+    const absent = recordsWithNames.filter(r => r.status === 'absent').length;
+
+    res.json({
+      success: true,
+      records: recordsWithNames,
+      summary: {
+        present,
+        absent,
+        total: recordsWithNames.length,
+        date,
+        isHoliday: false
+      }
+    });
+  } catch (err) {
+    console.error('❌ [CONTROLLER] Get attendance error:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch attendance' });
+  }
+}
+/**
+ * Save attendance records 
+ */
+static async saveAttendance(req, res) {
+  const schoolId = req.user?.schoolId;
+  if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+    return res.status(403).json({ success: false, error: 'Forbidden' });
+  }
+
+  const { date, records, class: classFilter } = req.body;
+
+  if (!date || !records || !Array.isArray(records) || records.length === 0) {
+    return res.status(400).json({ success: false, error: 'Invalid attendance data' });
+  }
+
+  try {
+    console.log(`📤 Saving attendance for school: ${schoolId}, date: ${date}`);
+    console.log('📤 Records:', JSON.stringify(records, null, 2));
+
+    // Check if it's a holiday
+    const isHoliday = records.some(r => r.isHoliday === true);
+    
+    if (isHoliday) {
+      console.log('📤 Saving holiday...');
+      const holidayRecord = records.find(r => r.isHoliday === true);
+      
+      const result = await StudentModel.saveHoliday(schoolId, date, {
+        isHoliday: true,
+        reason: holidayRecord.reason || 'Holiday',
+        class: classFilter || '',
+        section: holidayRecord.section || ''
+      });
+      
+      console.log('📤 Holiday save result:', result);
+      return res.json(result);
+    }
+
+    // CRITICAL FIX: Save regular attendance with preserved status
+    console.log('📤 Saving regular attendance...');
+    const recordsWithClass = records.map(record => ({
+      ...record,
+      // CRITICAL: Preserve the status exactly as received
+      status: record.status,
+      class: record.class || classFilter || '',
+      date: date
+    }));
+
+    const result = await StudentModel.saveAttendance(schoolId, {
+      date,
+      records: recordsWithClass
+    });
+
+    console.log('📤 Save result:', result);
+    res.json(result);
+  } catch (err) {
+    console.error('Save attendance error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to save attendance' });
+  }
+}}
 
 module.exports = StudentController;
