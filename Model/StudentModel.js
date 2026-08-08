@@ -9,89 +9,7 @@ class StudentModel {
   static ATTENDANCE_REF = (schoolId, date) => 
     `schools/${schoolId}/attendance/${date}`;
 
-  // /**
-  //  * Get attendance for a specific date and class
-  //  * @param {string} schoolId - School ID
-  //  * @param {string} date - Date in YYYY-MM-DD format
-  //  * @param {string} classFilter - Class filter (e.g., "10-A" or "all")
-  //  * @returns {Promise<Array>} - Array of attendance records
-  //  */
-  // static async getAttendance(schoolId, date, classFilter = 'all') {
-  //   try {
-  //     const snapshot = await rtdb.ref(this.ATTENDANCE_REF(schoolId, date)).once('value');
-      
-  //     if (!snapshot.exists()) {
-  //       return [];
-  //     }
-
-  //     const records = [];
-  //     snapshot.forEach(child => {
-  //       const record = { id: child.key, ...child.val() };
-  //       // Apply class filter if not 'all'
-  //       if (classFilter === 'all' || record.class === classFilter) {
-  //         records.push(record);
-  //       }
-  //     });
-
-  //     return records;
-  //   } catch (err) {
-  //     console.error('Get attendance error:', err);
-  //     return [];
-  //   }
-  // }
-
-  // /**
-  //  * Save attendance records for a date
-  //  * @param {string} schoolId - School ID
-  //  * @param {Object} attendanceData - { date, records: [{ studentId, status, class }] }
-  //  * @returns {Promise<{success: boolean, count: number}>}
-  //  */
-  // static async saveAttendance(schoolId, attendanceData) {
-  //   try {
-  //     const { date, records } = attendanceData;
-      
-  //     if (!date || !records || !Array.isArray(records) || records.length === 0) {
-  //       throw new Error('Invalid attendance data');
-  //     }
-
-  //     const ref = rtdb.ref(this.ATTENDANCE_REF(schoolId, date));
-      
-  //     // Prepare data for batch update
-  //     const updates = {};
-  //     records.forEach(record => {
-  //       if (!record.studentId || !record.status) {
-  //         throw new Error('Each record must have studentId and status');
-  //       }
-  //       updates[record.studentId] = {
-  //         studentId: record.studentId,
-  //         status: record.status,
-  //         class: record.class || '',
-  //         date: date,
-  //         updatedAt: admin.database.ServerValue.TIMESTAMP
-  //       };
-  //     });
-
-  //     await ref.update(updates);
-      
-  //     return { 
-  //       success: true, 
-  //       count: records.length,
-  //       message: `Attendance saved for ${records.length} students`
-  //     };
-  //   } catch (err) {
-  //     console.error('Save attendance error:', err);
-  //     return { success: false, message: err.message };
-  //   }
-  // }
-
-  /**
-   * Get attendance summary for a student
-   * @param {string} schoolId - School ID
-   * @param {string} studentId - Student ID
-   * @param {string} startDate - Start date (YYYY-MM-DD)
-   * @param {string} endDate - End date (YYYY-MM-DD)
-   * @returns {Promise<Object>} - Attendance summary
-   */
+  
   static async getStudentAttendanceSummary(schoolId, studentId, startDate, endDate) {
     try {
       const start = new Date(startDate);
@@ -135,13 +53,7 @@ class StudentModel {
     }
   }
 
-  /**
-   * Get attendance report for a class
-   * @param {string} schoolId - School ID
-   * @param {string} classId - Class identifier
-   * @param {string} month - Month (YYYY-MM)
-   * @returns {Promise<Object>} - Class attendance report
-   */
+ 
   static async getClassAttendanceReport(schoolId, classId, month) {
     try {
       const [year, monthNum] = month.split('-').map(Number);
@@ -222,13 +134,6 @@ class StudentModel {
     }
   }
 
-  /**
-   * Get monthly attendance statistics
-   * @param {string} schoolId - School ID
-   * @param {string} month - Month (YYYY-MM)
-   * @param {string} classFilter - Optional class filter
-   * @returns {Promise<Object>} - Monthly statistics
-   */
   static async getMonthlyAttendanceStats(schoolId, month, classFilter = 'all') {
     try {
       const [year, monthNum] = month.split('-').map(Number);
@@ -1180,19 +1085,7 @@ static async setupClassSubjects(schoolId, grade, section, subjects) {
     }
   }
 
-  // Model/StudentModel.js
 
-// Add this method to the StudentModel class
-
-/**
- * Migrate exam marks to new subject structure
- * @param {string} schoolId - School ID
- * @param {string} grade - Grade
- * @param {string} section - Section
- * @param {string} examId - Exam ID
- * @param {Array} newSubjects - New subjects array
- * @returns {Promise<Object>} - Result
- */
 static async migrateExamMarks(schoolId, grade, section, examId, newSubjects) {
   try {
     const examRef = rtdb.ref(
@@ -1282,15 +1175,13 @@ static calculateGrade(percentage) {
   return 'N/A';
 }
 
-// Model/StudentModel.js
+
 
 // At the top of the file, ensure the ATTENDANCE_REF is correct
 static ATTENDANCE_REF = (schoolId, date) => 
   `schools/${schoolId}/attendance/${date}`;
 
-/**
- * Get attendance for a specific date and class - COMPLETELY REWRITTEN
- */
+
 static async getAttendance(schoolId, date, classFilter = 'all') {
   try {
     const refPath = this.ATTENDANCE_REF(schoolId, date);
@@ -1375,9 +1266,7 @@ static async getAttendance(schoolId, date, classFilter = 'all') {
   }
 }
 
-/**
- * Save attendance records - FIXED with better debugging
- */
+
 static async saveAttendance(schoolId, attendanceData) {
   try {
     const { date, records } = attendanceData;
