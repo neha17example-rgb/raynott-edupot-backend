@@ -86,6 +86,12 @@ router.delete('/teachers/:teacherId', requireAuth, requireSchoolAccess, TeacherC
 router.patch('/teachers/:teacherId/performance/:className', requireAuth, requireSchoolAccess, TeacherController.updateClassPerformance);
 router.get('/teachers/subject/:subject', requireAuth, requireSchoolAccess, TeacherController.getTeachersBySubject);
 router.get('/teachers/class/:className', requireAuth, requireSchoolAccess, TeacherController.getTeachersByClass);
+router.get('/teacher-attendance',requireAuth,requireSchoolAccess,TeacherController.getAttendance)
+router.post('/teacher-attendance',requireAuth,requireSchoolAccess,TeacherController.saveAttendance)
+router.get('/teacher-attendance/stats/monthly',requireAuth,requireSchoolAccess,TeacherController.getMonthlyAttendanceStats)
+router.get('/teacher-attendance/teacher/:teacherId/summary',requireAuth,requireSchoolAccess,TeacherController.getTeacherAttendanceSummary)
+router.get('/teacher-attendance/teacher/:teacherId',requireAuth,requireSchoolAccess,TeacherController.deleteTeacherAttendance)
+router.post('/teacher-attendance/export',requireAuth,requireSchoolAccess,TeacherController.exportAttendanceCSV)
 
 // ────────────────────────────────────────────────
 // Hall Ticket Routes
