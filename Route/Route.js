@@ -1,5 +1,3 @@
-// routes/studentRoutes.js - Updated with proper middleware
-
 const express = require('express');
 const router = express.Router();
 const AuthController = require('../Controller/AuthController');
@@ -7,6 +5,7 @@ const SchoolController = require('../Controller/SchoolController');
 const StudentController = require('../Controller/StudentController');
 const TeacherController = require('../Controller/TeacherController');
 const HallTicketController = require('../Controller/HallTicketController');
+const BillingController = require('../Controller/BillingController')
 const upload = require('../Middleware/multerMiddleware');
 
 const { requireAuth, requireAdmin, requireSchoolAccess } = require('../Middleware/AuthMiddle');
@@ -161,6 +160,22 @@ router.post('/hallticket-settings/:key', requireAuth, requireSchoolAccess, HallT
 
 // Delete hall ticket settings for a class/section
 router.delete('/hallticket-settings/:key', requireAuth, requireSchoolAccess, HallTicketController.deleteHallTicketSettings);
+
+// ────────────────────────────────────────────────
+// Billing Ticket Settings Routes
+// ────────────────────────────────────────────────
+router.post('/billing/invoices',requireAuth,requireSchoolAccess,BillingController.createInvoice)
+
+router.get('/billing/invoices',requireAuth,requireSchoolAccess,BillingController.getAllInvoices)
+
+router.get('/billing/invoices/:invoiceId',requireAuth,requireSchoolAccess,BillingController.getInvoice)
+
+router.get('/billing/students/:studentId/invoices',requireAuth,requireSchoolAccess,BillingController.getInvoicesByStudent)
+
+router.patch('/billing/invoices/:invoicesId/status',requireAuth,requireSchoolAccess,BillingController.updateInvoiceStatus)
+
+router.delete('/billing/invoices/:invoiceId',requireAuth,requireSchoolAccess,BillingController.deleteInvoice)
+
 
 // ────────────────────────────────────────────────
 // School Management Routes (super admin only)
