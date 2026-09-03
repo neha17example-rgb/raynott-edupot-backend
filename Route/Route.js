@@ -6,7 +6,8 @@ const StudentController = require('../Controller/StudentController');
 const TeacherController = require('../Controller/TeacherController');
 const HallTicketController = require('../Controller/HallTicketController');
 const BillingController = require('../Controller/BillingController')
-const upload = require('../Middleware/multerMiddleware');
+const ImageUploadController= require('../Controller/ImageUploadController')
+const {upload,uploadMultiple,uploadSingle} = require('../Middleware/multerMiddleware');
 
 const { requireAuth, requireAdmin, requireSchoolAccess } = require('../Middleware/AuthMiddle');
 const SchoolInfoController = require('../Controller/SchoolInfoController');
@@ -30,6 +31,13 @@ router.get('/students/:studentId', requireAuth, requireSchoolAccess, StudentCont
 router.post('/students', requireAuth, requireSchoolAccess, StudentController.createStudent);
 router.patch('/students/:studentId', requireAuth, requireSchoolAccess, StudentController.updateStudent);
 router.delete('/students/:studentId', requireAuth, requireSchoolAccess, StudentController.deleteStudent);
+
+router.post('/students/:studentId/photo',requireAuth,requireSchoolAccess,uploadSingle,ImageUploadController.uploadStudentPhoto)
+router.get('/students/:studentId/photo',requireAuth,requireSchoolAccess,ImageUploadController.getStudentPhoto)
+router.delete('/students/:studentId/photo',requireAuth,requireSchoolAccess,ImageUploadController.deleteStudentPhoto)
+router.post('/school/logo',requireAuth,requireSchoolAccess,uploadSingle,ImageUploadController.uploadSchoolLogo)
+router.delete('/school/logo',requireAuth,requireSchoolAccess,ImageUploadController.deleteSchoolLogo)
+router.post('/students/photos/bulk',requireAuth,requireSchoolAccess,uploadMultiple,ImageUploadController.bulkUploadStudentPhotos)
 
 // Fees installments
 router.post('/students/:studentId/installments', requireAuth, requireSchoolAccess, StudentController.addInstallment);
@@ -97,7 +105,7 @@ router.post('/teacher-attendance/export',requireAuth,requireSchoolAccess,Teacher
 // ────────────────────────────────────────────────
 
 // Save hall ticket with photo upload
-router.post('/halltickets/:studentId', requireAuth, requireSchoolAccess, upload.single('photo'), HallTicketController.saveHallTicket);
+router.post('/halltickets/:studentId', requireAuth, requireSchoolAccess, uploadSingle, HallTicketController.saveHallTicket);
 
 // Get all hall tickets for the school
 router.get('/halltickets', requireAuth, requireSchoolAccess, HallTicketController.getAllHallTickets);
