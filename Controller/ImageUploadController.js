@@ -337,6 +337,311 @@ class ImageUploadController {
       });
     }
   }
+ // Controller/ImageUploadController.js
+
+/**
+ * Upload teacher photo for ID card
+ */
+static async uploadTeacherPhoto(req, res) {
+  try {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
+
+    const { teacherId } = req.params;
+    
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No image file provided' });
+    }
+
+    if (!req.file.mimetype.startsWith('image/')) {
+      return res.status(400).json({ success: false, error: 'Only image files are allowed' });
+    }
+
+    if (req.file.size > 5 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'Image size must be less than 5MB' });
+    }
+
+    const timestamp = Date.now();
+    const filename = `teachers/${schoolId}/${teacherId}/photo_${timestamp}.jpg`;
+    const file = bucket.file(filename);
+
+    await file.save(req.file.buffer, {
+      metadata: {
+        contentType: req.file.mimetype,
+        metadata: {
+          teacherId: teacherId,
+          schoolId: schoolId,
+          uploadedAt: new Date().toISOString()
+        }
+      }
+    });
+
+    await file.makePublic();
+    const publicUrl = `https://storage.googleapis.com/${bucket.name}/${filename}`;
+
+    // ✅ FIX: Save to the SAME path TeacherModel uses: 'teachers/{teacherId}'
+    const teacherRef = rtdb.ref(`teachers/${teacherId}`);
+    
+    // Verify teacher exists and belongs to this school
+    const teacherSnapshot = await teacherRef.once('value');
+    if (!teacherSnapshot.exists()) {
+      return res.status(404).json({ success: false, error: 'Teacher not found' });
+    }
+    const teacherData = teacherSnapshot.val();
+    if (teacherData.schoolId !== schoolId) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    await teacherRef.update({
+      'basicInfo/photoUrl': publicUrl,
+      'basicInfo/photoUpdatedAt': admin.database.ServerValue.TIMESTAMP,
+      updatedAt: admin.database.ServerValue.TIMESTAMP
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Photo uploaded successfully',
+      photoUrl: publicUrl,
+      teacherId: teacherId
+    });
+
+  } catch (error) {
+    console.error('Upload teacher photo error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to upload photo'
+    });
+  }
+}
+
+/**
+ * Delete teacher photo
+ */
+static async deleteTeacherPhoto(req, res) {
+  try {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
+
+    const { teacherId } = req.params;
+
+    // ✅ FIX: Use correct path
+    const teacherRef = rtdb.ref(`teachers/${teacherId}`);
+    const teacherSnapshot = await teacherRef.once('value');
+    const teacher = teacherSnapshot.val();
+
+    if (!teacher) {
+      return res.status(404).json({ success: false, error: 'Teacher not found' });
+    }
+
+    if (teacher.schoolId !== schoolId) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const photoUrl = teacher.basicInfo?.photoUrl;
+    if (photoUrl) {
+      const filename = photoUrl.split(`${bucket.name}/`)[1];
+      if (filename) {
+        const file = bucket.file(filename);
+        await file.delete().catch(err => {
+          console.warn('File deletion warning:', err.message);
+        });
+      }
+    }
+
+    await rtdb.ref(`teachers/${teacherId}/basicInfo/photoUrl`).remove();
+    await rtdb.ref(`teachers/${teacherId}/basicInfo/photoUpdatedAt`).remove();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Photo deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete teacher photo error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to delete photo'
+    });
+  }
+}
+
+/**
+ * Get teacher photo URL
+ */
+static async getTeacherPhoto(req, res) {
+  try {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
+
+    const { teacherId } = req.params;
+
+    // ✅ FIX: Use correct path
+    const teacherSnapshot = await rtdb.ref(`teachers/${teacherId}`).once('value');
+    const teacher = teacherSnapshot.val();
+
+    if (!teacher) {
+      return res.status(404).json({ success: false, error: 'Teacher not found' });
+    }
+
+    if (teacher.schoolId !== schoolId) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      photoUrl: teacher.basicInfo?.photoUrl || null,
+      teacherId: teacherId
+    });
+
+  } catch (error) {
+    console.error('Get teacher photo error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to get photo'
+    });
+  }
+}
+
+/**
+ * Get teacher photo as base64
+ */
+static async getTeacherPhotoBase64(req, res) {
+  try {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
+
+    const { teacherId } = req.params;
+
+    // ✅ FIX: Use correct path
+    const teacherSnapshot = await rtdb.ref(`teachers/${teacherId}`).once('value');
+    const teacher = teacherSnapshot.val();
+
+    if (!teacher) {
+      return res.status(404).json({ success: false, error: 'Teacher not found' });
+    }
+
+    if (teacher.schoolId !== schoolId) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    if (!teacher.basicInfo?.photoUrl) {
+      return res.status(404).json({ success: false, error: 'Photo not found' });
+    }
+
+    const photoUrl = teacher.basicInfo.photoUrl;
+    const filename = photoUrl.split(`${bucket.name}/`)[1];
+    
+    if (!filename) {
+      return res.status(404).json({ success: false, error: 'Invalid photo URL' });
+    }
+
+    const file = bucket.file(filename);
+    const [exists] = await file.exists();
+    
+    if (!exists) {
+      return res.status(404).json({ success: false, error: 'Photo file not found' });
+    }
+
+    const [buffer] = await file.download();
+    const base64 = buffer.toString('base64');
+    const mimeType = file.metadata.contentType || 'image/jpeg';
+    const photoData = `data:${mimeType};base64,${base64}`;
+
+    return res.status(200).json({
+      success: true,
+      photoData: photoData,
+      teacherId: teacherId
+    });
+
+  } catch (error) {
+    console.error('Get teacher photo base64 error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to get photo'
+    });
+  }
+}
+/**
+ * Bulk upload teacher photos
+ */
+static async bulkUploadTeacherPhotos(req, res) {
+  try {
+    const schoolId = req.user?.schoolId;
+    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ success: false, error: 'No image files provided' });
+    }
+
+    const results = [];
+    const errors = [];
+
+    for (const file of req.files) {
+      try {
+        const teacherId = file.originalname.split('.')[0];
+        
+        const teacherSnapshot = await rtdb.ref(`schools/${schoolId}/teachers/${teacherId}`).once('value');
+        if (!teacherSnapshot.exists()) {
+          errors.push({ teacherId, error: 'Teacher not found' });
+          continue;
+        }
+
+        const timestamp = Date.now();
+        const filename = `teachers/${schoolId}/${teacherId}/photo_${timestamp}.jpg`;
+        const storageFile = bucket.file(filename);
+
+        await storageFile.save(file.buffer, {
+          metadata: {
+            contentType: file.mimetype,
+            metadata: {
+              teacherId: teacherId,
+              schoolId: schoolId,
+              uploadedAt: new Date().toISOString()
+            }
+          }
+        });
+
+        await storageFile.makePublic();
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${filename}`;
+
+        await rtdb.ref(`schools/${schoolId}/teachers/${teacherId}/basicInfo/photoUrl`).set(publicUrl);
+        await rtdb.ref(`schools/${schoolId}/teachers/${teacherId}/basicInfo/photoUpdatedAt`).set(admin.database.ServerValue.TIMESTAMP);
+
+        results.push({ teacherId, success: true, photoUrl: publicUrl });
+
+      } catch (err) {
+        errors.push({ 
+          teacherId: file.originalname.split('.')[0], 
+          error: err.message 
+        });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Uploaded ${results.length} photos, ${errors.length} failed`,
+      results: results,
+      errors: errors
+    });
+
+  } catch (error) {
+    console.error('Bulk upload teacher photos error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to upload photos'
+    });
+  }
+}
 }
 
 module.exports = ImageUploadController;

@@ -100,6 +100,12 @@ router.get('/teacher-attendance/teacher/:teacherId/summary',requireAuth,requireS
 router.get('/teacher-attendance/teacher/:teacherId',requireAuth,requireSchoolAccess,TeacherController.deleteTeacherAttendance)
 router.post('/teacher-attendance/export',requireAuth,requireSchoolAccess,TeacherController.exportAttendanceCSV)
 
+router.post('/teachers/:teacherId/photo', requireAuth, requireSchoolAccess, uploadSingle, ImageUploadController.uploadTeacherPhoto);
+router.get('/teachers/:teacherId/photo', requireAuth, requireSchoolAccess, ImageUploadController.getTeacherPhoto);
+router.delete('/teachers/:teacherId/photo', requireAuth, requireSchoolAccess, ImageUploadController.deleteTeacherPhoto);
+router.get('/teachers/:teacherId/photo/base64', requireAuth, requireSchoolAccess, ImageUploadController.getTeacherPhotoBase64);
+router.post('/teachers/photos/bulk', requireAuth, requireSchoolAccess, uploadMultiple, ImageUploadController.bulkUploadTeacherPhotos);
+
 // ────────────────────────────────────────────────
 // Hall Ticket Routes
 // ────────────────────────────────────────────────
