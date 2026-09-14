@@ -38,7 +38,7 @@ class TeacherModel {
           .orderByChild('email')
           .equalTo(teacherData.email)
           .once('value');
-        
+
         if (existingSnapshot.exists()) {
           throw new Error('Teacher with this email already exists');
         }
@@ -59,6 +59,12 @@ class TeacherModel {
         feedback: teacherData.feedback || '',
         overallPerformance: teacherData.overallPerformance || {},
         joinDate: teacherData.joinDate || new Date().toISOString().split('T')[0],
+        designation: teacherData.designation || 'Teacher',
+        department: teacherData.department || '',
+        qualification: teacherData.qualification || '',
+        dob: teacherData.dob || '',
+        bloodGroup: teacherData.bloodGroup || '',
+        address: teacherData.address || '',
         status: 'active',
         createdAt: admin.database.ServerValue.TIMESTAMP,
         updatedAt: admin.database.ServerValue.TIMESTAMP
@@ -80,7 +86,7 @@ class TeacherModel {
     try {
       const snapshot = await rtdb.ref(this.TEACHERS_REF).once('value');
       if (!snapshot.exists()) return [];
-      
+
       const teachers = [];
       snapshot.forEach((child) => {
         const teacher = child.val();
@@ -89,7 +95,7 @@ class TeacherModel {
           teachers.push({ id: child.key, ...teacher });
         }
       });
-      
+
       // Sort by createdAt descending
       teachers.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       return teachers;
@@ -123,12 +129,11 @@ class TeacherModel {
     try {
       const teacherRef = rtdb.ref(`${this.TEACHERS_REF}/${teacherId}`);
       const snapshot = await teacherRef.once('value');
-      
+
       if (!snapshot.exists()) {
         throw new Error('Teacher not found');
       }
 
-      // Remove fields that shouldn't be updated directly
       const allowedUpdates = {
         name: updates.name,
         subject: updates.subject,
@@ -140,23 +145,29 @@ class TeacherModel {
         feedback: updates.feedback,
         overallPerformance: updates.overallPerformance,
         status: updates.status,
+        // Add these:
+        designation: updates.designation,
+        department: updates.department,
+        qualification: updates.qualification,
+        joiningDate: updates.joiningDate,
+        dob: updates.dob,
+        bloodGroup: updates.bloodGroup,
+        address: updates.address,
+        employeeId: updates.employeeId,
         updatedAt: admin.database.ServerValue.TIMESTAMP
       };
 
-      // Remove undefined fields
-      Object.keys(allowedUpdates).forEach(key => 
+      Object.keys(allowedUpdates).forEach(key =>
         allowedUpdates[key] === undefined && delete allowedUpdates[key]
       );
 
       await teacherRef.update(allowedUpdates);
-      
       return { success: true };
     } catch (err) {
       console.error('Update teacher error:', err);
       return { success: false, message: err.message };
     }
   }
-
   /**
    * Delete teacher
    */
@@ -164,7 +175,7 @@ class TeacherModel {
     try {
       const teacherRef = rtdb.ref(`${this.TEACHERS_REF}/${teacherId}`);
       const snapshot = await teacherRef.once('value');
-      
+
       if (!snapshot.exists()) {
         throw new Error('Teacher not found');
       }
@@ -184,14 +195,14 @@ class TeacherModel {
     try {
       const teacherRef = rtdb.ref(`${this.TEACHERS_REF}/${teacherId}`);
       const snapshot = await teacherRef.once('value');
-      
+
       if (!snapshot.exists()) {
         throw new Error('Teacher not found');
       }
 
       const teacher = snapshot.val();
       const currentPerformance = teacher.overallPerformance || {};
-      
+
       const updatedPerformance = {
         ...currentPerformance,
         [className]: {
@@ -206,7 +217,7 @@ class TeacherModel {
         overallPerformance: updatedPerformance,
         updatedAt: admin.database.ServerValue.TIMESTAMP
       });
-      
+
       return { success: true };
     } catch (err) {
       console.error('Update class performance error:', err);
@@ -223,9 +234,9 @@ class TeacherModel {
         .orderByChild('subject')
         .equalTo(subject)
         .once('value');
-      
+
       if (!snapshot.exists()) return [];
-      
+
       const teachers = [];
       snapshot.forEach((child) => {
         const teacher = child.val();
@@ -233,7 +244,7 @@ class TeacherModel {
           teachers.push({ id: child.key, ...teacher });
         }
       });
-      
+
       return teachers;
     } catch (err) {
       console.error('Get teachers by subject error:', err);
@@ -247,7 +258,7 @@ class TeacherModel {
   static async getTeachersByClass(schoolId, className) {
     try {
       const allTeachers = await this.getAllTeachers(schoolId);
-      return allTeachers.filter(teacher => 
+      return allTeachers.filter(teacher =>
         teacher.classesAssigned && teacher.classesAssigned.includes(className)
       );
     } catch (err) {
@@ -266,10 +277,10 @@ class TeacherModel {
     return Math.round(total / performances.length);
   }
 
-  static ATTENDANCE_REF = (schoolId, date) => 
+  static ATTENDANCE_REF = (schoolId, date) =>
     `schools/${schoolId}/teacherAttendance/${date}`;
-  
-  static COUNTERS_REF = (schoolId) => 
+
+  static COUNTERS_REF = (schoolId) =>
     `counters/schools/${schoolId}/teacherAttendanceCounter`;
 
   /**
@@ -283,9 +294,9 @@ class TeacherModel {
     try {
       const refPath = this.ATTENDANCE_REF(schoolId, date);
       console.log(`📥 [MODEL] Fetching teacher attendance from: ${refPath}`);
-      
+
       const snapshot = await rtdb.ref(refPath).once('value');
-      
+
       if (!snapshot.exists()) {
         console.log(`📥 [MODEL] No teacher attendance found for ${date}`);
         return [];
@@ -293,7 +304,7 @@ class TeacherModel {
 
       const allRecords = snapshot.val();
       console.log(`📥 [MODEL] Raw records:`, Object.keys(allRecords).length);
-      
+
       // Check if it's a holiday
       if (allRecords.isHoliday === true) {
         return [{
@@ -306,7 +317,7 @@ class TeacherModel {
       const records = [];
       Object.keys(allRecords).forEach(teacherId => {
         const record = allRecords[teacherId];
-        
+
         if (record.status) {
           records.push({
             teacherId: teacherId,
@@ -334,20 +345,20 @@ class TeacherModel {
   static async saveAttendance(schoolId, attendanceData) {
     try {
       const { date, records } = attendanceData;
-      
+
       if (!date || !records || !Array.isArray(records) || records.length === 0) {
         throw new Error('Invalid attendance data');
       }
 
       const refPath = this.ATTENDANCE_REF(schoolId, date);
       const ref = rtdb.ref(refPath);
-      
+
       const updates = {};
       records.forEach(record => {
         if (!record.teacherId || !record.status) {
           throw new Error('Each record must have teacherId and status');
         }
-        
+
         updates[record.teacherId] = {
           teacherId: record.teacherId,
           status: record.status,
@@ -357,11 +368,11 @@ class TeacherModel {
       });
 
       await ref.update(updates);
-      
+
       console.log(`✅ [MODEL] Saved ${records.length} teacher attendance records for ${date}`);
-      
-      return { 
-        success: true, 
+
+      return {
+        success: true,
         count: records.length,
         message: `Attendance saved for ${records.length} teachers`
       };
@@ -381,18 +392,18 @@ class TeacherModel {
   static async saveHoliday(schoolId, date, holidayData) {
     try {
       const ref = rtdb.ref(this.ATTENDANCE_REF(schoolId, date));
-      
+
       await ref.set({
         isHoliday: true,
         reason: holidayData.reason || 'Holiday',
         date: date,
         updatedAt: admin.database.ServerValue.TIMESTAMP
       });
-      
+
       console.log(`✅ [MODEL] Holiday saved for ${date}: ${holidayData.reason}`);
-      
-      return { 
-        success: true, 
+
+      return {
+        success: true,
         message: 'Holiday marked successfully'
       };
     } catch (err) {
@@ -411,7 +422,7 @@ class TeacherModel {
     try {
       const [year, monthNum] = month.split('-').map(Number);
       const daysInMonth = new Date(year, monthNum, 0).getDate();
-      
+
       const dailyStats = [];
       let totalPresent = 0;
       let totalAbsent = 0;
@@ -420,13 +431,13 @@ class TeacherModel {
       for (let day = 1; day <= daysInMonth; day++) {
         const dateStr = `${year}-${String(monthNum).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const snapshot = await rtdb.ref(this.ATTENDANCE_REF(schoolId, dateStr)).once('value');
-        
+
         let dayPresent = 0;
         let dayAbsent = 0;
-        
+
         if (snapshot.exists()) {
           const records = snapshot.val();
-          
+
           // Check if it's a holiday
           if (records.isHoliday === true) {
             dailyStats.push({
@@ -439,13 +450,13 @@ class TeacherModel {
             });
             continue;
           }
-          
+
           Object.values(records).forEach(record => {
             if (record.status === 'present') dayPresent++;
             else if (record.status === 'absent') dayAbsent++;
           });
         }
-        
+
         const dayTotal = dayPresent + dayAbsent;
         dailyStats.push({
           date: dateStr,
@@ -454,15 +465,15 @@ class TeacherModel {
           total: dayTotal,
           isHoliday: false
         });
-        
+
         totalPresent += dayPresent;
         totalAbsent += dayAbsent;
         if (dayTotal > 0) totalTeachers += dayTotal;
       }
 
       const totalAttendanceDays = daysInMonth;
-      const averageDailyAttendance = totalTeachers > 0 
-        ? Math.round((totalPresent / (totalTeachers * totalAttendanceDays)) * 100) 
+      const averageDailyAttendance = totalTeachers > 0
+        ? Math.round((totalPresent / (totalTeachers * totalAttendanceDays)) * 100)
         : 0;
 
       return {
@@ -497,7 +508,7 @@ class TeacherModel {
       while (currentDate <= end) {
         const dateStr = currentDate.toISOString().split('T')[0];
         const snapshot = await rtdb.ref(`${this.ATTENDANCE_REF(schoolId, dateStr)}/${teacherId}`).once('value');
-        
+
         if (snapshot.exists()) {
           const data = snapshot.val();
           // Check if it's a holiday
@@ -517,7 +528,7 @@ class TeacherModel {
             });
           }
         }
-        
+
         currentDate.setDate(currentDate.getDate() + 1);
       }
 
@@ -553,11 +564,11 @@ class TeacherModel {
   static async getAttendanceByTeacher(schoolId, teacherId, date) {
     try {
       const snapshot = await rtdb.ref(`${this.ATTENDANCE_REF(schoolId, date)}/${teacherId}`).once('value');
-      
+
       if (!snapshot.exists()) {
         return null;
       }
-      
+
       return {
         teacherId,
         ...snapshot.val()
