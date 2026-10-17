@@ -3,39 +3,127 @@ const { admin, rtdb } = require('../Config/firebaseAdmin');
 class StudentModel {
   static STUDENTS_REF = (schoolId) => `schools/${schoolId}/students`;
   static COUNTERS_REF = (schoolId) => `counters/schools/${schoolId}/studentCounter`;
+  static ATTENDANCE_REF = (schoolId, date) => `schools/${schoolId}/attendance/${date}`;
 
+  // ────────────────────────────────────────────────
+  // Helpers
+  // ────────────────────────────────────────────────
 
+  /**
+   * Collision-proof exam id generator.
+   * Never use bare Date.now() — it collides in the same millisecond.
+   */
+  static _newExamId() {
+    return `exam_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }
 
-  static ATTENDANCE_REF = (schoolId, date) => 
-    `schools/${schoolId}/attendance/${date}`;
+  /**
+   * Server-side grade calculation (single source of truth).
+   */
+  static calculateGrade(percentage) {
+    if (percentage >= 90) return 'A+';
+    if (percentage >= 80) return 'A';
+    if (percentage >= 70) return 'B+';
+    if (percentage >= 60) return 'B';
+    if (percentage >= 50) return 'C';
+    if (percentage >= 40) return 'D';
+    if (percentage > 0) return 'F';
+    return 'N/A';
+  }
 
-  
+  /**
+   * Recompute student-level rollup from the list of exams.
+   * Each exam contributes its OWN totalMarks/totalPossible.
+   */
+  static _rollupMarks(exams) {
+    const totalMarks = exams.reduce((s, e) => s + (Number(e.totalMarks) || 0), 0);
+    const totalPossible = exams.reduce((s, e) => s + (Number(e.totalPossible) || 0), 0);
+    const averagePercentage =
+      totalPossible > 0 ? Math.round((totalMarks / totalPossible) * 1000) / 10 : 0;
+
+    return {
+      totalMarks,
+      totalPossible,
+      averagePercentage,
+      overallGrade: this.calculateGrade(averagePercentage),
+    };
+  }
+
+  /**
+   * Normalize subjects and recompute per-exam fields.
+   * Returns null if no valid subject.
+   */
+  static _normalizeExamPayload(examForm) {
+    const validSubjects = (examForm.subjects || [])
+      .filter(
+        (s) =>
+          s &&
+          typeof s.name === 'string' &&
+          s.name.trim() &&
+          s.marks !== undefined && s.marks !== '' && s.marks !== null &&
+          s.total !== undefined && s.total !== '' && s.total !== null
+      )
+      .map((s) => {
+        const marks = parseFloat(s.marks) || 0;
+        const total = parseFloat(s.total) || 0;
+        const pct = total > 0 ? (marks / total) * 100 : 0;
+        return {
+          name: s.name.trim(),
+          marks,
+          total,
+          grade: this.calculateGrade(pct),
+        };
+      });
+
+    if (validSubjects.length === 0) return null;
+
+    const totalMarks = validSubjects.reduce((sum, s) => sum + s.marks, 0);
+    const totalPossible = validSubjects.reduce((sum, s) => sum + s.total, 0);
+    const percentage =
+      totalPossible > 0 ? Math.round((totalMarks / totalPossible) * 1000) / 10 : 0;
+
+    return {
+      examType: (examForm.examType || '').trim(),
+      examDate: examForm.examDate || new Date().toISOString().split('T')[0],
+      subjects: validSubjects,
+      totalMarks,
+      totalPossible,
+      percentage,
+      overallGrade: this.calculateGrade(percentage),
+    };
+  }
+
+  // ────────────────────────────────────────────────
+  // Attendance (unchanged)
+  // ────────────────────────────────────────────────
+
   static async getStudentAttendanceSummary(schoolId, studentId, startDate, endDate) {
     try {
       const start = new Date(startDate);
       const end = new Date(endDate);
       const results = [];
 
-      // Iterate through each day in the range
       const currentDate = new Date(start);
       while (currentDate <= end) {
         const dateStr = currentDate.toISOString().split('T')[0];
-        const snapshot = await rtdb.ref(`${this.ATTENDANCE_REF(schoolId, dateStr)}/${studentId}`).once('value');
-        
+        const snapshot = await rtdb
+          .ref(`${this.ATTENDANCE_REF(schoolId, dateStr)}/${studentId}`)
+          .once('value');
+
         if (snapshot.exists()) {
           results.push({
             date: dateStr,
             status: snapshot.val().status,
-            ...snapshot.val()
+            ...snapshot.val(),
           });
         }
-        
+
         currentDate.setDate(currentDate.getDate() + 1);
       }
 
       const totalDays = results.length;
-      const presentDays = results.filter(r => r.status === 'present').length;
-      const absentDays = results.filter(r => r.status === 'absent').length;
+      const presentDays = results.filter((r) => r.status === 'present').length;
+      const absentDays = results.filter((r) => r.status === 'absent').length;
 
       return {
         studentId,
@@ -45,7 +133,7 @@ class StudentModel {
         presentDays,
         absentDays,
         attendancePercentage: totalDays > 0 ? (presentDays / totalDays) * 100 : 0,
-        records: results
+        records: results,
       };
     } catch (err) {
       console.error('Get student attendance summary error:', err);
@@ -53,53 +141,52 @@ class StudentModel {
     }
   }
 
- 
   static async getClassAttendanceReport(schoolId, classId, month) {
     try {
       const [year, monthNum] = month.split('-').map(Number);
       const daysInMonth = new Date(year, monthNum, 0).getDate();
-      
-      // Get all students in the class
-      const studentsSnapshot = await rtdb.ref(this.STUDENTS_REF(schoolId))
+
+      const studentsSnapshot = await rtdb
+        .ref(this.STUDENTS_REF(schoolId))
         .orderByChild('basicInfo/grade')
         .equalTo(classId)
         .once('value');
-      
+
       const students = [];
-      studentsSnapshot.forEach(child => {
+      studentsSnapshot.forEach((child) => {
         students.push({ studentId: child.key, ...child.val() });
       });
 
       if (students.length === 0) {
-        return { classId, month, students: [], summary: { totalStudents: 0, totalPresent: 0, totalAbsent: 0 } };
+        return {
+          classId,
+          month,
+          students: [],
+          summary: { totalStudents: 0, totalPresent: 0, totalAbsent: 0 },
+        };
       }
 
       const attendanceData = {};
-      
-      // Get attendance for each day of the month
+
       for (let day = 1; day <= daysInMonth; day++) {
         const dateStr = `${year}-${String(monthNum).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const snapshot = await rtdb.ref(this.ATTENDANCE_REF(schoolId, dateStr)).once('value');
-        
+
         if (snapshot.exists()) {
           const dayRecords = snapshot.val();
-          Object.keys(dayRecords).forEach(studentId => {
+          Object.keys(dayRecords).forEach((studentId) => {
             if (!attendanceData[studentId]) {
               attendanceData[studentId] = { present: 0, absent: 0, total: 0 };
             }
             const status = dayRecords[studentId].status;
-            if (status === 'present') {
-              attendanceData[studentId].present++;
-            } else if (status === 'absent') {
-              attendanceData[studentId].absent++;
-            }
+            if (status === 'present') attendanceData[studentId].present++;
+            else if (status === 'absent') attendanceData[studentId].absent++;
             attendanceData[studentId].total++;
           });
         }
       }
 
-      // Build student reports
-      const studentReports = students.map(student => {
+      const studentReports = students.map((student) => {
         const stats = attendanceData[student.studentId] || { present: 0, absent: 0, total: 0 };
         return {
           studentId: student.studentId,
@@ -108,7 +195,7 @@ class StudentModel {
           presentDays: stats.present,
           absentDays: stats.absent,
           totalDays: stats.total,
-          attendancePercentage: stats.total > 0 ? (stats.present / stats.total) * 100 : 0
+          attendancePercentage: stats.total > 0 ? (stats.present / stats.total) * 100 : 0,
         };
       });
 
@@ -125,8 +212,8 @@ class StudentModel {
           totalPresent,
           totalAbsent,
           totalDays,
-          overallAttendancePercentage: totalDays > 0 ? (totalPresent / totalDays) * 100 : 0
-        }
+          overallAttendancePercentage: totalDays > 0 ? (totalPresent / totalDays) * 100 : 0,
+        },
       };
     } catch (err) {
       console.error('Get class attendance report error:', err);
@@ -138,52 +225,51 @@ class StudentModel {
     try {
       const [year, monthNum] = month.split('-').map(Number);
       const daysInMonth = new Date(year, monthNum, 0).getDate();
-      
+
       let totalStudents = 0;
       let totalPresent = 0;
       let totalAbsent = 0;
-      let dailyStats = [];
+      const dailyStats = [];
 
-      // Get all students (filtered by class if needed)
       let studentsSnapshot;
       if (classFilter !== 'all') {
-        studentsSnapshot = await rtdb.ref(this.STUDENTS_REF(schoolId))
+        studentsSnapshot = await rtdb
+          .ref(this.STUDENTS_REF(schoolId))
           .orderByChild('basicInfo/grade')
           .equalTo(classFilter)
           .once('value');
       } else {
         studentsSnapshot = await rtdb.ref(this.STUDENTS_REF(schoolId)).once('value');
       }
-      
+
       if (studentsSnapshot.exists()) {
         studentsSnapshot.forEach(() => totalStudents++);
       }
 
-      // Get daily attendance
       for (let day = 1; day <= daysInMonth; day++) {
         const dateStr = `${year}-${String(monthNum).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const snapshot = await rtdb.ref(this.ATTENDANCE_REF(schoolId, dateStr)).once('value');
-        
+
         let dayPresent = 0;
         let dayAbsent = 0;
-        
+
         if (snapshot.exists()) {
           const records = snapshot.val();
-          Object.values(records).forEach(record => {
+          Object.values(records).forEach((record) => {
             if (classFilter === 'all' || record.class === classFilter) {
               if (record.status === 'present') dayPresent++;
               else if (record.status === 'absent') dayAbsent++;
             }
           });
         }
-        
+
         dailyStats.push({
           date: dateStr,
           present: dayPresent,
           absent: dayAbsent,
-          total: dayPresent + dayAbsent
+          total: dayPresent + dayAbsent,
         });
-        
+
         totalPresent += dayPresent;
         totalAbsent += dayAbsent;
       }
@@ -195,8 +281,9 @@ class StudentModel {
         totalPresent,
         totalAbsent,
         totalAttendanceDays: daysInMonth,
-        averageDailyAttendance: totalStudents > 0 ? (totalPresent / (totalStudents * daysInMonth)) * 100 : 0,
-        dailyStats
+        averageDailyAttendance:
+          totalStudents > 0 ? (totalPresent / (totalStudents * daysInMonth)) * 100 : 0,
+        dailyStats,
       };
     } catch (err) {
       console.error('Get monthly attendance stats error:', err);
@@ -204,24 +291,18 @@ class StudentModel {
     }
   }
 
-  /**
-   * Bulk mark attendance for multiple students
-   * @param {string} schoolId - School ID
-   * @param {Object} bulkData - { date, class, attendance: [{ studentId, status }] }
-   * @returns {Promise<{success: boolean, count: number}>}
-   */
   static async bulkMarkAttendance(schoolId, bulkData) {
     try {
       const { date, attendance } = bulkData;
-      
+
       if (!date || !attendance || !Array.isArray(attendance) || attendance.length === 0) {
         throw new Error('Invalid bulk attendance data');
       }
 
       const ref = rtdb.ref(this.ATTENDANCE_REF(schoolId, date));
       const updates = {};
-      
-      attendance.forEach(record => {
+
+      attendance.forEach((record) => {
         if (!record.studentId || !record.status) {
           throw new Error('Each record must have studentId and status');
         }
@@ -229,27 +310,28 @@ class StudentModel {
           studentId: record.studentId,
           status: record.status,
           class: bulkData.class || '',
-          date: date,
-          updatedAt: admin.database.ServerValue.TIMESTAMP
+          date,
+          updatedAt: admin.database.ServerValue.TIMESTAMP,
         };
       });
 
       await ref.update(updates);
-      
-      return { 
-        success: true, 
+
+      return {
+        success: true,
         count: attendance.length,
-        message: `Bulk attendance marked for ${attendance.length} students`
+        message: `Bulk attendance marked for ${attendance.length} students`,
       };
     } catch (err) {
       console.error('Bulk mark attendance error:', err);
       return { success: false, message: err.message };
     }
   }
-  
-  /**
-   * Generate sequential student ID per school: STU0001, STU0002, ...
-   */
+
+  // ────────────────────────────────────────────────
+  // Student CRUD (unchanged)
+  // ────────────────────────────────────────────────
+
   static async generateStudentId(schoolId) {
     const counterRef = rtdb.ref(this.COUNTERS_REF(schoolId));
     const result = await counterRef.transaction(
@@ -269,7 +351,8 @@ class StudentModel {
       const admissionNo = studentData.basicInfo?.admissionNo?.trim();
       if (!admissionNo) throw new Error('Admission number is required');
 
-      const existingSnap = await rtdb.ref(this.STUDENTS_REF(schoolId))
+      const existingSnap = await rtdb
+        .ref(this.STUDENTS_REF(schoolId))
         .orderByChild('basicInfo/admissionNo')
         .equalTo(admissionNo)
         .once('value');
@@ -323,7 +406,9 @@ class StudentModel {
 
   static async getStudent(schoolId, studentId) {
     try {
-      const snapshot = await rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`).once('value');
+      const snapshot = await rtdb
+        .ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`)
+        .once('value');
       return snapshot.val() || null;
     } catch (err) {
       console.error('Get student error:', err);
@@ -352,7 +437,10 @@ class StudentModel {
     }
   }
 
-  // === Fees Installment  ===
+  // ────────────────────────────────────────────────
+  // Fees Installments (unchanged)
+  // ────────────────────────────────────────────────
+
   static async addInstallment(schoolId, studentId, installmentData) {
     try {
       const ref = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
@@ -394,102 +482,74 @@ class StudentModel {
   }
 
   static async updateInstallment(schoolId, studentId, installmentId, updates) {
-  try {
-    console.log(`[MODEL] Updating installment ${installmentId} for student ${studentId} in school ${schoolId}`);
-    console.log("  updates:", updates);
+    try {
+      const ref = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
+      const snap = await ref.once('value');
+      const student = snap.val();
+      if (!student) throw new Error('Student not found');
 
-    const ref = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
-    const snap = await ref.once('value');
-    const student = snap.val();
+      const installments = (student.installments || []).map((inst) =>
+        String(inst.id) === String(installmentId) ? { ...inst, ...updates } : inst
+      );
 
-    if (!student) {
-      console.log("→ Student not found");
-      throw new Error('Student not found');
+      const totalPaid = installments.reduce((sum, i) => sum + (i.paid || 0), 0);
+      const pendingAmount = (student.feeStructure?.total || 0) - totalPaid;
+
+      await ref.update({
+        installments,
+        totalPaid,
+        pendingAmount,
+        status: pendingAmount === 0 ? 'completed' : student.status || 'active',
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
+      });
+
+      return { success: true };
+    } catch (err) {
+      console.error('[MODEL ERROR]', err);
+      return { success: false, message: err.message };
     }
-
-    console.log("  Current installments count:", student.installments?.length || 0);
-
-    const installments = (student.installments || []).map(inst =>
-      String(inst.id) === String(installmentId)   
-        ? { ...inst, ...updates }
-        : inst
-    );
-
-    console.log("  After update count still:", installments.length);
-
-    const totalPaid = installments.reduce((sum, i) => sum + (i.paid || 0), 0);
-    const pendingAmount = (student.feeStructure?.total || 0) - totalPaid;
-
-    await ref.update({
-      installments,
-      totalPaid,
-      pendingAmount,
-      status: pendingAmount === 0 ? 'completed' : student.status || 'active',
-      updatedAt: admin.database.ServerValue.TIMESTAMP,
-    });
-
-    console.log("→ Update successful");
-    return { success: true };
-  } catch (err) {
-    console.error("[MODEL ERROR]", err);
-    return { success: false, message: err.message };
   }
-}
 
   static async deleteInstallment(schoolId, studentId, installmentId) {
-  try {
-    console.log(`[MODEL DELETE] student ${studentId} - removing installment ${installmentId}`);
+    try {
+      const ref = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
+      const snap = await ref.once('value');
+      const student = snap.val();
+      if (!student) throw new Error('Student not found');
 
-    const ref = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
-    const snap = await ref.once('value');
-    const student = snap.val();
+      let installments = (student.installments || []).filter(
+        (inst) => String(inst.id) !== String(installmentId)
+      );
+      installments = installments.map((inst, idx) => ({ ...inst, number: idx + 1 }));
 
-    if (!student) {
-      console.log("→ Student not found");
-      throw new Error('Student not found');
+      const totalPaid = installments.reduce((sum, i) => sum + (i.paid || 0), 0);
+      const pendingAmount = (student.feeStructure?.total || 0) - totalPaid;
+
+      await ref.update({
+        installments,
+        totalPaid,
+        pendingAmount,
+        status: pendingAmount === 0 ? 'completed' : student.status || 'active',
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
+      });
+
+      return { success: true };
+    } catch (err) {
+      console.error('[MODEL DELETE ERROR]', err);
+      return { success: false, message: err.message };
     }
-
-    const originalCount = student.installments?.length || 0;
-    console.log("  Before delete - count:", originalCount);
-
-    let installments = (student.installments || []).filter(inst => 
-      String(inst.id) !== String(installmentId)
-    );
-
-    console.log("  After filter - count:", installments.length);
-
-    if (installments.length === originalCount) {
-      console.warn("→ No installment was removed - ID not found");
-    }
-
-    installments = installments.map((inst, idx) => ({ ...inst, number: idx + 1 }));
-
-    const totalPaid = installments.reduce((sum, i) => sum + (i.paid || 0), 0);
-    const pendingAmount = (student.feeStructure?.total || 0) - totalPaid;
-
-    await ref.update({
-      installments,
-      totalPaid,
-      pendingAmount,
-      status: pendingAmount === 0 ? 'completed' : student.status || 'active',
-      updatedAt: admin.database.ServerValue.TIMESTAMP,
-    });
-
-    console.log("→ Delete successful");
-    return { success: true };
-  } catch (err) {
-    console.error("[MODEL DELETE ERROR]", err);
-    return { success: false, message: err.message };
   }
-}
 
-  // === Marks ===
-  
+  // ────────────────────────────────────────────────
+  // Marks  ⭐ ALL REWRITTEN
+  // ────────────────────────────────────────────────
+
   static async getMarks(schoolId, studentId) {
     try {
-      const snapshot = await rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}/marks`).once('value');
-      const marks = snapshot.val();
-      return marks || null;
+      const snapshot = await rtdb
+        .ref(`${this.STUDENTS_REF(schoolId)}/${studentId}/marks`)
+        .once('value');
+      return snapshot.val() || null;
     } catch (err) {
       console.error('Get marks error:', err);
       return null;
@@ -497,181 +557,209 @@ class StudentModel {
   }
 
   /**
-   * Append a new exam to student's marks.exams array
-   * @param {string} schoolId
-   * @param {string} studentId
-   * @param {object} examData – the new exam object (without id – will be generated)
+   * Append a new exam to student's marks.exams array.
+   * - Uses collision-proof exam id.
+   * - Normalizes subjects + recomputes per-exam totals server-side.
+   * - Recomputes student-level rollup.
    */
+  static async addExam(schoolId, studentId, examData) {
+    try {
+      const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
+      const snapshot = await studentRef.once('value');
+      const student = snapshot.val();
 
-static async addExam(schoolId, studentId, examData) {
-  try {
-    const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
-    const snapshot = await studentRef.once('value');
-    const student = snapshot.val();
+      if (!student) throw new Error('Student not found');
 
-    if (!student) {
-      throw new Error('Student not found');
-    }
+      const normalized = this._normalizeExamPayload(examData);
+      if (!normalized) {
+        return { success: false, message: 'No valid subjects provided' };
+      }
 
-    const currentMarks = student.marks || {};
-    const currentExams = currentMarks.exams || [];
-    
-    const newExam = {
-      id: Date.now().toString(),
-      ...examData,
-      subjects: examData.subjects || [],
-    };
+      const currentMarks = student.marks || {};
+      const currentExams = currentMarks.exams || [];
 
-    const updatedExams = [...currentExams, newExam];
-
-    const updates = {
-      'marks': {
-        ...currentMarks,
-        exams: updatedExams,
-        updatedAt: admin.database.ServerValue.TIMESTAMP
-      },
-      updatedAt: admin.database.ServerValue.TIMESTAMP
-    };
-
-    await studentRef.update(updates);
-
-    return { success: true, exam: newExam };
-  } catch (err) {
-    console.error('Add exam error:', err);
-    return { success: false, message: err.message };
-  }
-}
-
-
-static async deleteExam(schoolId, studentId, examId) {
-  try {
-    const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
-    const snapshot = await studentRef.once('value');
-    const student = snapshot.val();
-
-    if (!student) {
-      throw new Error('Student not found');
-    }
-
-    const currentMarks = student.marks || {};
-    const currentExams = currentMarks.exams || [];
-    const updatedExams = currentExams.filter(exam => String(exam.id) !== String(examId));
-
-    if (updatedExams.length === currentExams.length) {
-      return { success: false, message: 'Exam not found' };
-    }
-
-    const updates = {
-      'marks': {
-        ...currentMarks,
-        exams: updatedExams,
-        updatedAt: admin.database.ServerValue.TIMESTAMP
-      },
-      updatedAt: admin.database.ServerValue.TIMESTAMP
-    };
-
-    await studentRef.update(updates);
-
-    return { success: true };
-  } catch (err) {
-    console.error('Delete exam error:', err);
-    return { success: false, message: err.message };
-  }
-}
-
-
-static async updateMarks(schoolId, studentId, marksData) {
-  try {
-    const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
-    
-    const updates = {
-      'marks': {
-        ...marksData,
-        updatedAt: admin.database.ServerValue.TIMESTAMP
-      },
-      updatedAt: admin.database.ServerValue.TIMESTAMP
-    };
-    
-    await studentRef.update(updates);
-    return { success: true };
-  } catch (err) {
-    console.error('Update marks error:', err);
-    return { success: false, message: err.message };
-  }
-}
-/**
- * Search students by multiple optional criteria
- * @param {string} schoolId
- * @param {Object} criteria 
- * @returns {Promise<Array>} 
- */
-static async searchStudents(schoolId, criteria = {}) {
-  try {
-    const ref = rtdb.ref(this.STUDENTS_REF(schoolId));
-    const snapshot = await ref.once('value');
-
-    if (!snapshot.exists()) {
-      return [];
-    }
-
-    const results = [];
-
-    snapshot.forEach(child => {
-      const student = {
-        studentId: child.key,
-        ...child.val()
+      const newExam = {
+        id: this._newExamId(),
+        ...normalized,
       };
 
-      const basic = student.basicInfo || {};
+      const updatedExams = [...currentExams, newExam];
+      const rollup = this._rollupMarks(updatedExams);
 
-      // Case-insensitive partial match for strings
-      const matchesName = !criteria.name || 
-        basic.name?.toLowerCase().includes(criteria.name.toLowerCase());
+      await studentRef.update({
+        marks: {
+          ...currentMarks,
+          exams: updatedExams,
+          ...rollup,
+          updatedAt: admin.database.ServerValue.TIMESTAMP,
+        },
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
+      });
 
-      const matchesAdmissionNo = !criteria.admissionNo || 
-        basic.admissionNo === criteria.admissionNo;
-
-      const matchesGrade = !criteria.grade || 
-        basic.grade === criteria.grade;
-
-      const matchesSection = !criteria.section || 
-        basic.section?.toLowerCase() === criteria.section.toLowerCase();
-
-      const matchesFather = !criteria.fatherName || 
-        basic.fatherName?.toLowerCase().includes(criteria.fatherName.toLowerCase());
-
-      const matchesMother = !criteria.motherName || 
-        basic.motherName?.toLowerCase().includes(criteria.motherName.toLowerCase());
-
-      const matchesAadhar = !criteria.aadhar || 
-        basic.aadhar === criteria.aadhar;
-
-
-      if (matchesName && matchesAdmissionNo && matchesGrade && 
-          matchesSection && matchesFather && matchesMother && matchesAadhar) {
-        results.push(student);
-      }
-    });
-
-    results.sort((a, b) => {
-      const nameA = a.basicInfo?.name?.toLowerCase() || '';
-      const nameB = b.basicInfo?.name?.toLowerCase() || '';
-      return nameA.localeCompare(nameB);
-    });
-
-    return results;
-  } catch (err) {
-    console.error('Search students error:', err);
-    throw err;
+      return { success: true, exam: newExam };
+    } catch (err) {
+      console.error('Add exam error:', err);
+      return { success: false, message: err.message };
+    }
   }
-}
-  
+
+  static async deleteExam(schoolId, studentId, examId) {
+    try {
+      const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
+      const snapshot = await studentRef.once('value');
+      const student = snapshot.val();
+
+      if (!student) throw new Error('Student not found');
+
+      const currentMarks = student.marks || {};
+      const currentExams = currentMarks.exams || [];
+      const updatedExams = currentExams.filter(
+        (exam) => String(exam.id) !== String(examId)
+      );
+
+      if (updatedExams.length === currentExams.length) {
+        return { success: false, message: 'Exam not found' };
+      }
+
+      const rollup = this._rollupMarks(updatedExams);
+
+      await studentRef.update({
+        marks: {
+          ...currentMarks,
+          exams: updatedExams,
+          ...rollup,
+          updatedAt: admin.database.ServerValue.TIMESTAMP,
+        },
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
+      });
+
+      return { success: true };
+    } catch (err) {
+      console.error('Delete exam error:', err);
+      return { success: false, message: err.message };
+    }
+  }
+
   /**
-   * Get all assessments for a student
+   * Full replacement of marks. Rejects duplicate exam ids.
+   * Recomputes per-exam and student-level rollup on server.
    */
+  static async updateMarks(schoolId, studentId, marksData) {
+    try {
+      const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
+      const snapshot = await studentRef.once('value');
+      const student = snapshot.val();
+      if (!student) throw new Error('Student not found');
+
+      const incoming = Array.isArray(marksData.exams) ? marksData.exams : [];
+      const seen = new Set();
+      const cleanedExams = [];
+
+      for (const exam of incoming) {
+        const rawId = exam && exam.id ? String(exam.id) : '';
+        const id = rawId || this._newExamId();
+
+        if (seen.has(id)) {
+          return {
+            success: false,
+            message:
+              `Duplicate exam id "${id}" detected. Refusing to save — this would ` +
+              `corrupt both exams. Please fix the duplicate ids first.`,
+          };
+        }
+        seen.add(id);
+
+        // Re-normalize subjects so per-exam totals stay accurate
+        const normalized = this._normalizeExamPayload(exam);
+        if (!normalized) {
+          // Keep exam but flag it
+          cleanedExams.push({ ...exam, id });
+        } else {
+          cleanedExams.push({ ...exam, ...normalized, id });
+        }
+      }
+
+      const rollup = this._rollupMarks(cleanedExams);
+
+      await studentRef.update({
+        marks: {
+          ...marksData,
+          exams: cleanedExams,
+          ...rollup,
+          updatedAt: admin.database.ServerValue.TIMESTAMP,
+        },
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
+      });
+
+      return { success: true, marks: { exams: cleanedExams, ...rollup } };
+    } catch (err) {
+      console.error('Update marks error:', err);
+      return { success: false, message: err.message };
+    }
+  }
+
+  // ────────────────────────────────────────────────
+  // Search / Assessments (unchanged)
+  // ────────────────────────────────────────────────
+
+  static async searchStudents(schoolId, criteria = {}) {
+    try {
+      const ref = rtdb.ref(this.STUDENTS_REF(schoolId));
+      const snapshot = await ref.once('value');
+      if (!snapshot.exists()) return [];
+
+      const results = [];
+      snapshot.forEach((child) => {
+        const student = { studentId: child.key, ...child.val() };
+        const basic = student.basicInfo || {};
+
+        const matchesName =
+          !criteria.name || basic.name?.toLowerCase().includes(criteria.name.toLowerCase());
+        const matchesAdmissionNo =
+          !criteria.admissionNo || basic.admissionNo === criteria.admissionNo;
+        const matchesGrade = !criteria.grade || basic.grade === criteria.grade;
+        const matchesSection =
+          !criteria.section ||
+          basic.section?.toLowerCase() === criteria.section.toLowerCase();
+        const matchesFather =
+          !criteria.fatherName ||
+          basic.fatherName?.toLowerCase().includes(criteria.fatherName.toLowerCase());
+        const matchesMother =
+          !criteria.motherName ||
+          basic.motherName?.toLowerCase().includes(criteria.motherName.toLowerCase());
+        const matchesAadhar = !criteria.aadhar || basic.aadhar === criteria.aadhar;
+
+        if (
+          matchesName &&
+          matchesAdmissionNo &&
+          matchesGrade &&
+          matchesSection &&
+          matchesFather &&
+          matchesMother &&
+          matchesAadhar
+        ) {
+          results.push(student);
+        }
+      });
+
+      results.sort((a, b) => {
+        const nameA = a.basicInfo?.name?.toLowerCase() || '';
+        const nameB = b.basicInfo?.name?.toLowerCase() || '';
+        return nameA.localeCompare(nameB);
+      });
+
+      return results;
+    } catch (err) {
+      console.error('Search students error:', err);
+      throw err;
+    }
+  }
+
   static async getAssessments(schoolId, studentId) {
     try {
-      const snapshot = await rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}/assessments`).once('value');
+      const snapshot = await rtdb
+        .ref(`${this.STUDENTS_REF(schoolId)}/${studentId}/assessments`)
+        .once('value');
       return snapshot.val() || { categories: [], assessments: [] };
     } catch (err) {
       console.error('Get assessments error:', err);
@@ -679,42 +767,37 @@ static async searchStudents(schoolId, criteria = {}) {
     }
   }
 
-  /**
-   * Add a new assessment category 
-   */
   static async addAssessmentCategory(schoolId, studentId, categoryData) {
     try {
       const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
       const snapshot = await studentRef.once('value');
       const student = snapshot.val();
+      if (!student) throw new Error('Student not found');
 
-      if (!student) {
-        throw new Error('Student not found');
-      }
-
-      const currentAssessments = student.assessments || { categories: [], assessments: [] };
+      const currentAssessments = student.assessments || {
+        categories: [],
+        assessments: [],
+      };
       const categories = currentAssessments.categories || [];
-      
+
       const newCategory = {
         id: Date.now().toString(),
         name: categoryData.name,
         description: categoryData.description || '',
         weightage: categoryData.weightage || 100,
-        createdAt: admin.database.ServerValue.TIMESTAMP
+        createdAt: admin.database.ServerValue.TIMESTAMP,
       };
 
       const updatedCategories = [...categories, newCategory];
 
-      const updates = {
-        'assessments': {
+      await studentRef.update({
+        assessments: {
           ...currentAssessments,
           categories: updatedCategories,
-          updatedAt: admin.database.ServerValue.TIMESTAMP
+          updatedAt: admin.database.ServerValue.TIMESTAMP,
         },
-        updatedAt: admin.database.ServerValue.TIMESTAMP
-      };
-
-      await studentRef.update(updates);
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
+      });
 
       return { success: true, category: newCategory };
     } catch (err) {
@@ -723,34 +806,29 @@ static async searchStudents(schoolId, criteria = {}) {
     }
   }
 
-  /**
-   * Update an assessment category
-   */
   static async updateAssessmentCategory(schoolId, studentId, categoryId, updates) {
     try {
       const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
       const snapshot = await studentRef.once('value');
       const student = snapshot.val();
+      if (!student) throw new Error('Student not found');
 
-      if (!student) {
-        throw new Error('Student not found');
-      }
-
-      const currentAssessments = student.assessments || { categories: [], assessments: [] };
-      const categories = (currentAssessments.categories || []).map(cat =>
+      const currentAssessments = student.assessments || {
+        categories: [],
+        assessments: [],
+      };
+      const categories = (currentAssessments.categories || []).map((cat) =>
         String(cat.id) === String(categoryId) ? { ...cat, ...updates } : cat
       );
 
-      const updatesObj = {
-        'assessments': {
+      await studentRef.update({
+        assessments: {
           ...currentAssessments,
           categories,
-          updatedAt: admin.database.ServerValue.TIMESTAMP
+          updatedAt: admin.database.ServerValue.TIMESTAMP,
         },
-        updatedAt: admin.database.ServerValue.TIMESTAMP
-      };
-
-      await studentRef.update(updatesObj);
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
+      });
 
       return { success: true };
     } catch (err) {
@@ -759,36 +837,32 @@ static async searchStudents(schoolId, criteria = {}) {
     }
   }
 
-  /**
-   * Delete an assessment category
-   */
   static async deleteAssessmentCategory(schoolId, studentId, categoryId) {
     try {
       const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
       const snapshot = await studentRef.once('value');
       const student = snapshot.val();
+      if (!student) throw new Error('Student not found');
 
-      if (!student) {
-        throw new Error('Student not found');
-      }
-
-      const currentAssessments = student.assessments || { categories: [], assessments: [] };
-      const categories = (currentAssessments.categories || []).filter(cat => String(cat.id) !== String(categoryId));
-      
+      const currentAssessments = student.assessments || {
+        categories: [],
+        assessments: [],
+      };
+      const categories = (currentAssessments.categories || []).filter(
+        (cat) => String(cat.id) !== String(categoryId)
+      );
       const assessments = (currentAssessments.assessments || []).filter(
-        assessment => String(assessment.categoryId) !== String(categoryId)
+        (a) => String(a.categoryId) !== String(categoryId)
       );
 
-      const updatesObj = {
-        'assessments': {
+      await studentRef.update({
+        assessments: {
           categories,
           assessments,
-          updatedAt: admin.database.ServerValue.TIMESTAMP
+          updatedAt: admin.database.ServerValue.TIMESTAMP,
         },
-        updatedAt: admin.database.ServerValue.TIMESTAMP
-      };
-
-      await studentRef.update(updatesObj);
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
+      });
 
       return { success: true };
     } catch (err) {
@@ -797,40 +871,33 @@ static async searchStudents(schoolId, criteria = {}) {
     }
   }
 
-  /**
-   * Add an assessment record for a student
-   */
   static async addAssessment(schoolId, studentId, assessmentData) {
     try {
       const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
       const snapshot = await studentRef.once('value');
       const student = snapshot.val();
+      if (!student) throw new Error('Student not found');
 
-      if (!student) {
-        throw new Error('Student not found');
-      }
-
-      const currentAssessments = student.assessments || { categories: [], assessments: [] };
+      const currentAssessments = student.assessments || {
+        categories: [],
+        assessments: [],
+      };
       const assessments = currentAssessments.assessments || [];
-      
+
       const newAssessment = {
         id: Date.now().toString(),
         ...assessmentData,
-        createdAt: admin.database.ServerValue.TIMESTAMP
+        createdAt: admin.database.ServerValue.TIMESTAMP,
       };
 
-      const updatedAssessments = [...assessments, newAssessment];
-
-      const updatesObj = {
-        'assessments': {
+      await studentRef.update({
+        assessments: {
           ...currentAssessments,
-          assessments: updatedAssessments,
-          updatedAt: admin.database.ServerValue.TIMESTAMP
+          assessments: [...assessments, newAssessment],
+          updatedAt: admin.database.ServerValue.TIMESTAMP,
         },
-        updatedAt: admin.database.ServerValue.TIMESTAMP
-      };
-
-      await studentRef.update(updatesObj);
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
+      });
 
       return { success: true, assessment: newAssessment };
     } catch (err) {
@@ -839,34 +906,29 @@ static async searchStudents(schoolId, criteria = {}) {
     }
   }
 
-  /**
-   * Update an assessment record
-   */
   static async updateAssessment(schoolId, studentId, assessmentId, updates) {
     try {
       const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
       const snapshot = await studentRef.once('value');
       const student = snapshot.val();
+      if (!student) throw new Error('Student not found');
 
-      if (!student) {
-        throw new Error('Student not found');
-      }
-
-      const currentAssessments = student.assessments || { categories: [], assessments: [] };
-      const assessments = (currentAssessments.assessments || []).map(assessment =>
-        String(assessment.id) === String(assessmentId) ? { ...assessment, ...updates } : assessment
+      const currentAssessments = student.assessments || {
+        categories: [],
+        assessments: [],
+      };
+      const assessments = (currentAssessments.assessments || []).map((a) =>
+        String(a.id) === String(assessmentId) ? { ...a, ...updates } : a
       );
 
-      const updatesObj = {
-        'assessments': {
+      await studentRef.update({
+        assessments: {
           ...currentAssessments,
           assessments,
-          updatedAt: admin.database.ServerValue.TIMESTAMP
+          updatedAt: admin.database.ServerValue.TIMESTAMP,
         },
-        updatedAt: admin.database.ServerValue.TIMESTAMP
-      };
-
-      await studentRef.update(updatesObj);
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
+      });
 
       return { success: true };
     } catch (err) {
@@ -875,34 +937,29 @@ static async searchStudents(schoolId, criteria = {}) {
     }
   }
 
-  /**
-   * Delete an assessment record
-   */
   static async deleteAssessment(schoolId, studentId, assessmentId) {
     try {
       const studentRef = rtdb.ref(`${this.STUDENTS_REF(schoolId)}/${studentId}`);
       const snapshot = await studentRef.once('value');
       const student = snapshot.val();
+      if (!student) throw new Error('Student not found');
 
-      if (!student) {
-        throw new Error('Student not found');
-      }
-
-      const currentAssessments = student.assessments || { categories: [], assessments: [] };
+      const currentAssessments = student.assessments || {
+        categories: [],
+        assessments: [],
+      };
       const assessments = (currentAssessments.assessments || []).filter(
-        assessment => String(assessment.id) !== String(assessmentId)
+        (a) => String(a.id) !== String(assessmentId)
       );
 
-      const updatesObj = {
-        'assessments': {
+      await studentRef.update({
+        assessments: {
           ...currentAssessments,
           assessments,
-          updatedAt: admin.database.ServerValue.TIMESTAMP
+          updatedAt: admin.database.ServerValue.TIMESTAMP,
         },
-        updatedAt: admin.database.ServerValue.TIMESTAMP
-      };
-
-      await studentRef.update(updatesObj);
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
+      });
 
       return { success: true };
     } catch (err) {
@@ -911,54 +968,47 @@ static async searchStudents(schoolId, criteria = {}) {
     }
   }
 
-   /**
-   * Create a new class exam template
-   */
-  // Model/StudentModel.js - Update the createClassExam method
+  // ────────────────────────────────────────────────
+  // Class Exams (unchanged — already correct)
+  // ────────────────────────────────────────────────
 
-static async createClassExam(schoolId, grade, section, examData) {
-  try {
-    // Generate a unique ID using timestamp + random string
-    const examId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    const examRef = rtdb.ref(
-      `schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}`
-    );
-    
-    const newExam = {
-      id: examId,  // Use the generated unique ID
-      examType: examData.examType,
-      examDate: examData.examDate,
-      subjects: examData.subjects || [],
-      createdAt: admin.database.ServerValue.TIMESTAMP,
-      marks: {} // Will store per-student marks
-    };
+  static async createClassExam(schoolId, grade, section, examData) {
+    try {
+      const examId = this._newExamId();
 
-    await examRef.set(newExam);
-    
-    return { success: true, examId, exam: newExam };
-  } catch (err) {
-    console.error('Create class exam error:', err);
-    return { success: false, message: err.message };
+      const examRef = rtdb.ref(
+        `schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}`
+      );
+
+      const newExam = {
+        id: examId,
+        examType: examData.examType,
+        examDate: examData.examDate,
+        subjects: examData.subjects || [],
+        createdAt: admin.database.ServerValue.TIMESTAMP,
+        marks: {},
+      };
+
+      await examRef.set(newExam);
+
+      return { success: true, examId, exam: newExam };
+    } catch (err) {
+      console.error('Create class exam error:', err);
+      return { success: false, message: err.message };
+    }
   }
-}
 
-  /**
-   * Get all class exams for a specific class
-   */
   static async getClassExams(schoolId, grade, section) {
     try {
-      const snapshot = await rtdb.ref(
-        `schools/${schoolId}/classExams/${grade}-${section}/exams`
-      ).once('value');
-      
+      const snapshot = await rtdb
+        .ref(`schools/${schoolId}/classExams/${grade}-${section}/exams`)
+        .once('value');
       if (!snapshot.exists()) return [];
-      
+
       const exams = [];
-      snapshot.forEach(child => {
+      snapshot.forEach((child) => {
         exams.push({ id: child.key, ...child.val() });
       });
-      
       return exams;
     } catch (err) {
       console.error('Get class exams error:', err);
@@ -966,34 +1016,184 @@ static async createClassExam(schoolId, grade, section, examData) {
     }
   }
 
-  /**
-   * Update student marks for a specific class exam
-   */
+  // ────────────────────────────────────────────────
+// Class Exam: edit subjects + per-student marks
+// ────────────────────────────────────────────────
+
+/**
+ * Get one class exam with its current subjects and per-student marks.
+ */
+static async getClassExam(schoolId, grade, section, examId) {
+  try {
+    const snap = await rtdb
+      .ref(`schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}`)
+      .once('value');
+    if (!snap.exists()) return null;
+    return { id: examId, ...snap.val() };
+  } catch (err) {
+    console.error('Get class exam error:', err);
+    return null;
+  }
+}
+
+/**
+ * Edit a class exam's subjects (each subject: { name, total }) AND
+ * optionally overwrite per-student obtained marks.
+ *
+ * payload = {
+ *   subjects: [{ name: 'Math', total: 100 }, ...],
+ *   studentMarks?: { [studentId]: [{ name: 'Math', marks: 78 }, ...] }
+ * }
+ *
+ * Any student not present in studentMarks keeps their existing marks
+ * (matched by subject name) — totals get re-baselined to the new subjects.
+ */
+static async updateClassExamDetails(schoolId, grade, section, examId, payload) {
+  try {
+    const examRef = rtdb.ref(
+      `schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}`
+    );
+    const snap = await examRef.once('value');
+    const exam = snap.val();
+    if (!exam) throw new Error('Exam not found');
+
+    // 1) Normalize + validate new subjects
+    const rawSubjects = Array.isArray(payload.subjects) ? payload.subjects : [];
+    const newSubjects = rawSubjects
+      .filter((s) => s && typeof s.name === 'string' && s.name.trim())
+      .map((s) => ({
+        name: s.name.trim(),
+        total: Math.max(0, parseFloat(s.total) || 0),
+      }));
+
+    if (newSubjects.length === 0) {
+      throw new Error('At least one subject with a name is required');
+    }
+
+    // Reject duplicate subject names (would collapse marks)
+    const nameSet = new Set();
+    for (const s of newSubjects) {
+      if (nameSet.has(s.name)) {
+        throw new Error(`Duplicate subject name: "${s.name}"`);
+      }
+      nameSet.add(s.name);
+    }
+
+    const subjectTotalMap = {};
+    newSubjects.forEach((s) => {
+      subjectTotalMap[s.name] = s.total;
+    });
+
+    // 2) Rebase existing per-student marks to the new subject list
+    const existingMarks = exam.marks || {};
+    const incomingStudentMarks = payload.studentMarks || {};
+    const rebasedMarks = {};
+
+    // Union of student ids we know about (existing + incoming)
+    const studentIds = new Set([
+      ...Object.keys(existingMarks),
+      ...Object.keys(incomingStudentMarks),
+    ]);
+
+    for (const studentId of studentIds) {
+      const existing = existingMarks[studentId];
+      const incoming = incomingStudentMarks[studentId];
+
+      // Build a lookup of obtained marks by subject name
+      const obtainedByName = {};
+
+      // Start from existing (so untouched students keep their numbers)
+      if (existing && Array.isArray(existing.marks)) {
+        existing.marks.forEach((m) => {
+          if (m && m.name) {
+            obtainedByName[m.name] = parseFloat(m.marks) || 0;
+          }
+        });
+      }
+
+      // Overlay incoming marks (this is what the UI just edited)
+      if (Array.isArray(incoming)) {
+        incoming.forEach((m) => {
+          if (m && m.name) {
+            obtainedByName[m.name] = parseFloat(m.marks) || 0;
+          }
+        });
+      }
+
+      // Rebuild in the exact order of newSubjects, with totals from newSubjects
+      const rebuiltMarks = newSubjects.map((sub) => {
+        const obtained = obtainedByName[sub.name] ?? 0;
+        const total = sub.total;
+        const pct = total > 0 ? (obtained / total) * 100 : 0;
+        return {
+          name: sub.name,
+          marks: obtained,
+          total,
+          grade: this.calculateGrade(pct),
+        };
+      });
+
+      const totalMarks = rebuiltMarks.reduce((s, m) => s + (m.marks || 0), 0);
+      const totalPossible = rebuiltMarks.reduce((s, m) => s + (m.total || 0), 0);
+      const percentage =
+        totalPossible > 0 ? Math.round((totalMarks / totalPossible) * 1000) / 10 : 0;
+
+      rebasedMarks[studentId] = {
+        marks: rebuiltMarks,
+        totalMarks,
+        totalPossible,
+        percentage,
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
+      };
+    }
+
+    // 3) Write the exam back
+    await examRef.update({
+      subjects: newSubjects,
+      marks: rebasedMarks,
+      updatedAt: admin.database.ServerValue.TIMESTAMP,
+    });
+
+    return {
+      success: true,
+      exam: {
+        id: examId,
+        ...exam,
+        subjects: newSubjects,
+        marks: rebasedMarks,
+      },
+    };
+  } catch (err) {
+    console.error('Update class exam details error:', err);
+    return { success: false, message: err.message };
+  }
+}
+
   static async updateStudentClassExamMarks(
-    schoolId, 
-    grade, 
-    section, 
-    examId, 
-    studentId, 
+    schoolId,
+    grade,
+    section,
+    examId,
+    studentId,
     marksData
   ) {
     try {
       const ref = rtdb.ref(
         `schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}/marks/${studentId}`
       );
-      
-      // Calculate total and percentage
+
       const totalMarks = marksData.reduce((sum, m) => sum + (m.marks || 0), 0);
       const totalPossible = marksData.reduce((sum, m) => sum + (m.total || 0), 0);
       const percentage = totalPossible > 0 ? (totalMarks / totalPossible) * 100 : 0;
-      
+
       const data = {
         marks: marksData,
         totalMarks,
+        totalPossible,
         percentage: Math.round(percentage * 10) / 10,
-        updatedAt: admin.database.ServerValue.TIMESTAMP
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
       };
-      
+
       await ref.set(data);
       return { success: true };
     } catch (err) {
@@ -1002,67 +1202,58 @@ static async createClassExam(schoolId, grade, section, examData) {
     }
   }
 
-  /**
- * Get class subjects
- */
-static async getClassSubjects(schoolId, grade, section) {
-  try {
-    const snapshot = await rtdb.ref(
-      `schools/${schoolId}/classExams/${grade}-${section}/subjects`
-    ).once('value');
-    
-    if (!snapshot.exists()) return [];
-    
-    const subjects = snapshot.val();
-    // If it's an object with numeric keys, convert to array
-    if (typeof subjects === 'object' && !Array.isArray(subjects)) {
-      return Object.values(subjects);
+  static async getClassSubjects(schoolId, grade, section) {
+    try {
+      const snapshot = await rtdb
+        .ref(`schools/${schoolId}/classExams/${grade}-${section}/subjects`)
+        .once('value');
+      if (!snapshot.exists()) return [];
+
+      const subjects = snapshot.val();
+      if (typeof subjects === 'object' && !Array.isArray(subjects)) {
+        return Object.values(subjects);
+      }
+      return Array.isArray(subjects) ? subjects : [];
+    } catch (err) {
+      console.error('Get class subjects error:', err);
+      return [];
     }
-    return Array.isArray(subjects) ? subjects : [];
-  } catch (err) {
-    console.error('Get class subjects error:', err);
-    return [];
   }
-}
-static async setupClassSubjects(schoolId, grade, section, subjects) {
-  try {
-    // Store subjects as an array at the path
-    await rtdb.ref(
-      `schools/${schoolId}/classExams/${grade}-${section}/subjects`
-    ).set(subjects);
-    
-    return { success: true };
-  } catch (err) {
-    console.error('Setup class subjects error:', err);
-    return { success: false, message: err.message };
+
+  static async setupClassSubjects(schoolId, grade, section, subjects) {
+    try {
+      await rtdb
+        .ref(`schools/${schoolId}/classExams/${grade}-${section}/subjects`)
+        .set(subjects);
+      return { success: true };
+    } catch (err) {
+      console.error('Setup class subjects error:', err);
+      return { success: false, message: err.message };
+    }
   }
-}
-  /**
-   * Get student's marks for all class exams
-   */
+
   static async getStudentClassExamMarks(schoolId, grade, section, studentId) {
     try {
-      const snapshot = await rtdb.ref(
-        `schools/${schoolId}/classExams/${grade}-${section}/exams`
-      ).once('value');
-      
+      const snapshot = await rtdb
+        .ref(`schools/${schoolId}/classExams/${grade}-${section}/exams`)
+        .once('value');
       if (!snapshot.exists()) return [];
-      
+
       const results = [];
-      snapshot.forEach(examChild => {
+      snapshot.forEach((examChild) => {
         const examId = examChild.key;
         const examData = examChild.val();
         const studentMarks = examData.marks?.[studentId] || null;
-        
+
         results.push({
           examId,
           examType: examData.examType,
           examDate: examData.examDate,
           subjects: examData.subjects,
-          marks: studentMarks
+          marks: studentMarks,
         });
       });
-      
+
       return results;
     } catch (err) {
       console.error('Get student class exam marks error:', err);
@@ -1070,14 +1261,11 @@ static async setupClassSubjects(schoolId, grade, section, subjects) {
     }
   }
 
-  /**
-   * Delete a class exam
-   */
   static async deleteClassExam(schoolId, grade, section, examId) {
     try {
-      await rtdb.ref(
-        `schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}`
-      ).remove();
+      await rtdb
+        .ref(`schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}`)
+        .remove();
       return { success: true };
     } catch (err) {
       console.error('Delete class exam error:', err);
@@ -1085,260 +1273,167 @@ static async setupClassSubjects(schoolId, grade, section, subjects) {
     }
   }
 
+  static async migrateExamMarks(schoolId, grade, section, examId, newSubjects) {
+    try {
+      const examRef = rtdb.ref(
+        `schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}`
+      );
 
-static async migrateExamMarks(schoolId, grade, section, examId, newSubjects) {
-  try {
-    const examRef = rtdb.ref(
-      `schools/${schoolId}/classExams/${grade}-${section}/exams/${examId}`
-    );
-    
-    const snapshot = await examRef.once('value');
-    const exam = snapshot.val();
-    
-    if (!exam) {
-      throw new Error('Exam not found');
-    }
-    
-    const marks = exam.marks || {};
-    const updatedMarks = {};
-    
-    // Create a map of subject names to their new total values
-    const subjectMap = {};
-    newSubjects.forEach(sub => {
-      subjectMap[sub.name] = sub.total;
-    });
-    
-    // Update each student's marks
-    for (const [studentId, studentMarks] of Object.entries(marks)) {
-      if (studentMarks.marks && Array.isArray(studentMarks.marks)) {
-        // Update each subject's total
-        const updatedStudentMarks = studentMarks.marks.map(mark => {
-          const newTotal = subjectMap[mark.name];
-          if (newTotal !== undefined) {
-            // Calculate new percentage based on new total
-            const marksObtained = mark.marks || 0;
-            const percentage = newTotal > 0 ? (marksObtained / newTotal) * 100 : 0;
-            
-            return {
-              ...mark,
-              total: newTotal,
-              percentage: Math.round(percentage * 10) / 10,
-              grade: this.calculateGrade(percentage)
-            };
-          }
-          return mark;
-        });
-        
-        // Recalculate totals
-        const totalMarks = updatedStudentMarks.reduce((sum, m) => sum + (m.marks || 0), 0);
-        const totalPossible = updatedStudentMarks.reduce((sum, m) => sum + (m.total || 0), 0);
-        const percentage = totalPossible > 0 ? (totalMarks / totalPossible) * 100 : 0;
-        
-        updatedMarks[studentId] = {
-          marks: updatedStudentMarks,
-          totalMarks: totalMarks,
-          totalPossible: totalPossible,
-          percentage: Math.round(percentage * 10) / 10,
-          updatedAt: admin.database.ServerValue.TIMESTAMP
-        };
-      } else {
-        // If no marks, just copy the data
-        updatedMarks[studentId] = studentMarks;
+      const snapshot = await examRef.once('value');
+      const exam = snapshot.val();
+      if (!exam) throw new Error('Exam not found');
+
+      const marks = exam.marks || {};
+      const updatedMarks = {};
+
+      const subjectMap = {};
+      newSubjects.forEach((sub) => {
+        subjectMap[sub.name] = sub.total;
+      });
+
+      for (const [studentId, studentMarks] of Object.entries(marks)) {
+        if (studentMarks.marks && Array.isArray(studentMarks.marks)) {
+          const updatedStudentMarks = studentMarks.marks.map((mark) => {
+            const newTotal = subjectMap[mark.name];
+            if (newTotal !== undefined) {
+              const marksObtained = mark.marks || 0;
+              const percentage = newTotal > 0 ? (marksObtained / newTotal) * 100 : 0;
+              return {
+                ...mark,
+                total: newTotal,
+                percentage: Math.round(percentage * 10) / 10,
+                grade: this.calculateGrade(percentage),
+              };
+            }
+            return mark;
+          });
+
+          const totalMarks = updatedStudentMarks.reduce((s, m) => s + (m.marks || 0), 0);
+          const totalPossible = updatedStudentMarks.reduce((s, m) => s + (m.total || 0), 0);
+          const percentage = totalPossible > 0 ? (totalMarks / totalPossible) * 100 : 0;
+
+          updatedMarks[studentId] = {
+            marks: updatedStudentMarks,
+            totalMarks,
+            totalPossible,
+            percentage: Math.round(percentage * 10) / 10,
+            updatedAt: admin.database.ServerValue.TIMESTAMP,
+          };
+        } else {
+          updatedMarks[studentId] = studentMarks;
+        }
       }
+
+      await examRef.update({
+        subjects: newSubjects,
+        marks: updatedMarks,
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
+      });
+
+      return { success: true };
+    } catch (err) {
+      console.error('Migrate exam marks error:', err);
+      return { success: false, message: err.message };
     }
-    
-    // Update the exam with new subjects and migrated marks
-    await examRef.update({
-      subjects: newSubjects,
-      marks: updatedMarks,
-      updatedAt: admin.database.ServerValue.TIMESTAMP
-    });
-    
-    return { success: true };
-  } catch (err) {
-    console.error('Migrate exam marks error:', err);
-    return { success: false, message: err.message };
   }
-}
 
-/**
- * Calculate grade based on percentage
- */
-static calculateGrade(percentage) {
-  if (percentage >= 90) return 'A+';
-  if (percentage >= 80) return 'A';
-  if (percentage >= 70) return 'B+';
-  if (percentage >= 60) return 'B';
-  if (percentage >= 50) return 'C';
-  if (percentage >= 40) return 'D';
-  if (percentage > 0) return 'F';
-  return 'N/A';
-}
+  // ────────────────────────────────────────────────
+  // Attendance get/save (unchanged)
+  // ────────────────────────────────────────────────
 
+  static async getAttendance(schoolId, date, classFilter = 'all') {
+    try {
+      const refPath = this.ATTENDANCE_REF(schoolId, date);
+      const snapshot = await rtdb.ref(refPath).once('value');
 
+      if (!snapshot.exists()) return [];
 
-// At the top of the file, ensure the ATTENDANCE_REF is correct
-static ATTENDANCE_REF = (schoolId, date) => 
-  `schools/${schoolId}/attendance/${date}`;
+      const allRecords = snapshot.val();
 
-
-static async getAttendance(schoolId, date, classFilter = 'all') {
-  try {
-    const refPath = this.ATTENDANCE_REF(schoolId, date);
-    console.log(`📥 [MODEL] Fetching attendance from: ${refPath}`);
-    
-    const snapshot = await rtdb.ref(refPath).once('value');
-    
-    console.log(`📥 [MODEL] Snapshot exists: ${snapshot.exists()}`);
-    
-    if (!snapshot.exists()) {
-      console.log(`📥 [MODEL] No attendance found for ${date}`);
-      return [];
-    }
-
-    const allRecords = snapshot.val();
-    console.log(`📥 [MODEL] Raw records from Firebase:`, JSON.stringify(allRecords, null, 2));
-    
-    // Check if it's a holiday (stored at the root level)
-    if (allRecords.isHoliday === true) {
-      console.log(`📥 [MODEL] Holiday found: ${allRecords.reason}`);
-      return [{
-        isHoliday: true,
-        reason: allRecords.reason || 'Holiday',
-        date: date
-      }];
-    }
-
-    const records = [];
-    
-    // CRITICAL FIX: Iterate over the keys of allRecords
-    Object.keys(allRecords).forEach(studentId => {
-      const record = allRecords[studentId];
-      
-      console.log(`📥 [MODEL] Processing record for ${studentId}:`, record);
-      
-      // Skip if not a valid attendance record
-      if (!record || typeof record !== 'object') {
-        console.warn(`⚠️ [MODEL] Invalid record for student ${studentId}:`, record);
-        return;
+      if (allRecords.isHoliday === true) {
+        return [
+          {
+            isHoliday: true,
+            reason: allRecords.reason || 'Holiday',
+            date,
+          },
+        ];
       }
-      
-      // Skip if no status
-      if (!record.status) {
-        console.warn(`⚠️ [MODEL] No status for student ${studentId}:`, record);
-        return;
-      }
-      
-      // CRITICAL FIX: Check if the record matches the class filter
-      let matchesClass = false;
-      
-      if (classFilter === 'all') {
-        matchesClass = true;
-      } else if (classFilter.includes('-')) {
-        // Filter is like "UKG-A" or "9-A" - split and compare class AND section
-        const [filterClass, filterSection] = classFilter.split('-');
-        matchesClass = record.class === filterClass && record.section === filterSection;
-        console.log(`📥 [MODEL] Comparing: ${record.class}-${record.section} vs ${filterClass}-${filterSection} => ${matchesClass}`);
-      } else {
-        // Filter is just a class name like "9"
-        matchesClass = record.class === classFilter;
-      }
-      
-      if (matchesClass) {
-        records.push({
-          studentId: studentId, // Use the key as studentId
-          status: record.status, // Preserve exact status
-          class: record.class || '',
-          section: record.section || '',
-          date: record.date || date,
-          updatedAt: record.updatedAt || null
-        });
-      }
-    });
 
-    console.log(`📥 [MODEL] Returning ${records.length} filtered records`);
-    console.log(`📥 [MODEL] Records:`, JSON.stringify(records, null, 2));
-    
-    return records;
-  } catch (err) {
-    console.error('❌ [MODEL] Get attendance error:', err);
-    return [];
-  }
-}
+      const records = [];
+      Object.keys(allRecords).forEach((studentId) => {
+        const record = allRecords[studentId];
+        if (!record || typeof record !== 'object') return;
+        if (!record.status) return;
 
+        let matchesClass = false;
+        if (classFilter === 'all') {
+          matchesClass = true;
+        } else if (classFilter.includes('-')) {
+          const [filterClass, filterSection] = classFilter.split('-');
+          matchesClass = record.class === filterClass && record.section === filterSection;
+        } else {
+          matchesClass = record.class === classFilter;
+        }
 
-static async saveAttendance(schoolId, attendanceData) {
-  try {
-    const { date, records } = attendanceData;
-    
-    console.log(`📤 [MODEL] Saving attendance for school: ${schoolId}, date: ${date}`);
-    console.log(`📤 [MODEL] Records count: ${records?.length || 0}`);
-    
-    if (!date || !records || !Array.isArray(records) || records.length === 0) {
-      throw new Error('Invalid attendance data');
-    }
-
-    // Get the reference path
-    const refPath = this.ATTENDANCE_REF(schoolId, date);
-    console.log(`📤 [MODEL] Ref path: ${refPath}`);
-    
-    const ref = rtdb.ref(refPath);
-    
-    // Prepare data for batch update
-    const updates = {};
-    records.forEach((record, index) => {
-      if (!record.studentId || !record.status) {
-        console.error(`❌ [MODEL] Record ${index} missing studentId or status:`, record);
-        throw new Error(`Each record must have studentId and status. Record ${index} is invalid.`);
-      }
-      
-      // CRITICAL FIX: Preserve the exact status
-      updates[record.studentId] = {
-        studentId: record.studentId,
-        status: record.status, // Keep as is - don't transform
-        class: record.class || '',
-        section: record.section || '',
-        date: date,
-        updatedAt: admin.database.ServerValue.TIMESTAMP
-      };
-      
-      console.log(`📤 [MODEL] Record ${index}: ${record.studentId} -> ${record.status}`);
-    });
-
-    console.log(`📤 [MODEL] Updates object:`, JSON.stringify(updates, null, 2));
-
-    // Write to Firebase
-    await ref.update(updates);
-    
-    console.log(`✅ [MODEL] Saved ${records.length} attendance records for ${date}`);
-    
-    // CRITICAL FIX: Verify the write by reading back immediately
-    const verifySnapshot = await ref.once('value');
-    const verifyData = verifySnapshot.val();
-    console.log(`📤 [MODEL] Verification read:`, JSON.stringify(verifyData, null, 2));
-    
-    // Check if the data was actually written
-    let savedCount = 0;
-    if (verifyData) {
-      Object.keys(verifyData).forEach(key => {
-        if (verifyData[key] && verifyData[key].status) {
-          savedCount++;
+        if (matchesClass) {
+          records.push({
+            studentId,
+            status: record.status,
+            class: record.class || '',
+            section: record.section || '',
+            date: record.date || date,
+            updatedAt: record.updatedAt || null,
+          });
         }
       });
+
+      return records;
+    } catch (err) {
+      console.error('Get attendance error:', err);
+      return [];
     }
-    console.log(`📤 [MODEL] Verification: ${savedCount} records found in database`);
-    
-    return { 
-      success: true, 
-      count: records.length,
-      verified: savedCount,
-      message: `Attendance saved for ${records.length} students`
-    };
-  } catch (err) {
-    console.error('❌ [MODEL] Save attendance error:', err);
-    return { success: false, message: err.message };
   }
-}
+
+  static async saveAttendance(schoolId, attendanceData) {
+    try {
+      const { date, records } = attendanceData;
+
+      if (!date || !records || !Array.isArray(records) || records.length === 0) {
+        throw new Error('Invalid attendance data');
+      }
+
+      const ref = rtdb.ref(this.ATTENDANCE_REF(schoolId, date));
+      const updates = {};
+
+      records.forEach((record, index) => {
+        if (!record.studentId || !record.status) {
+          throw new Error(
+            `Each record must have studentId and status. Record ${index} is invalid.`
+          );
+        }
+        updates[record.studentId] = {
+          studentId: record.studentId,
+          status: record.status,
+          class: record.class || '',
+          section: record.section || '',
+          date,
+          updatedAt: admin.database.ServerValue.TIMESTAMP,
+        };
+      });
+
+      await ref.update(updates);
+
+      return {
+        success: true,
+        count: records.length,
+        message: `Attendance saved for ${records.length} students`,
+      };
+    } catch (err) {
+      console.error('Save attendance error:', err);
+      return { success: false, message: err.message };
+    }
+  }
 }
 
 module.exports = StudentModel;

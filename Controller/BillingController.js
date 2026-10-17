@@ -3,7 +3,7 @@ const BillingModel = require('../Model/BillingModel');
 const StudentModel = require('../Model/StudentModel');
 
 class BillingController {
-  /**
+    /**
    * Create a new invoice
    */
   static async createInvoice(req, res) {
@@ -14,13 +14,16 @@ class BillingController {
 
     try {
       const invoiceData = req.body;
-      
+
       // Validate required fields
       if (!invoiceData.studentId) {
         return res.status(400).json({ success: false, error: 'Student ID is required' });
       }
-      
-      if (!invoiceData.items || !Array.isArray(invoiceData.items) || invoiceData.items.length === 0) {
+      if (
+        !invoiceData.items ||
+        !Array.isArray(invoiceData.items) ||
+        invoiceData.items.length === 0
+      ) {
         return res.status(400).json({ success: false, error: 'At least one item is required' });
       }
 
@@ -38,8 +41,32 @@ class BillingController {
       invoiceData.studentFather = student.basicInfo?.fatherName || '';
       invoiceData.studentPhone = student.basicInfo?.fatherPhone || '';
 
+      // ⭐ If frontend didn't provide installments snapshot,
+      //    build it here from the live student record.
+      if (!Array.isArray(invoiceData.installments)) {
+        invoiceData.installments = (student.installments || []).map((i) => ({
+          number: i.number ?? null,
+          amount: Number(i.amount) || 0,
+          paid: Number(i.paid) || 0,
+          status: i.status || 'pending',
+          dueDate: i.dueDate || '',
+          paidDate: i.paidDate || '',
+          paymentMode: i.paymentMode || '',
+          notes: i.notes || '',
+        }));
+      }
+
+      // ⭐ Same for feeSummary
+      if (!invoiceData.feeSummary) {
+        invoiceData.feeSummary = {
+          totalFees: student.feeStructure?.total || 0,
+          totalPaid: student.totalPaid || 0,
+          pendingAmount: student.pendingAmount || 0,
+        };
+      }
+
       const result = await BillingModel.createInvoice(schoolId, invoiceData);
-      
+
       if (result.success) {
         res.status(201).json(result);
       } else {
@@ -50,7 +77,6 @@ class BillingController {
       res.status(500).json({ success: false, error: error.message });
     }
   }
-
   /**
    * Get all invoices with optional filters
    */

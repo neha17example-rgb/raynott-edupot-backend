@@ -124,72 +124,79 @@ class StudentController {
     res.json(result);
   }
 
-  // === Marks (full marks object) ===
-  static async getMarks(req, res) {
-    const schoolId = req.user?.schoolId;
-    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
+// ────────────────────────────────────────────────
+// Marks handlers
+// ────────────────────────────────────────────────
 
-    const { studentId } = req.params;
-
-    try {
-      const marks = await StudentModel.getMarks(schoolId, studentId);
-      if (!marks) {
-        return res.status(404).json({ success: false, error: 'Marks not found' });
-      }
-      res.json({ success: true, marks });
-    } catch (err) {
-      res.status(500).json({ success: false, error: 'Failed to fetch marks' });
-    }
+static async getMarks(req, res) {
+  const schoolId = req.user?.schoolId;
+  if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+    return res.status(403).json({ error: 'Forbidden' });
   }
 
-  static async addExam(req, res) {
-    const schoolId = req.user?.schoolId;
-    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
+  const { studentId } = req.params;
 
-    const { studentId } = req.params;
-    const examData = req.body;
-
-    if (!examData.examType) {
-      return res.status(400).json({ success: false, error: 'examType is required' });
+  try {
+    const marks = await StudentModel.getMarks(schoolId, studentId);
+    if (!marks) {
+      return res.status(404).json({ success: false, error: 'Marks not found' });
     }
+    res.json({ success: true, marks });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to fetch marks' });
+  }
+}
 
-    const result = await StudentModel.addExam(schoolId, studentId, examData);
-    if (result.success) {
-      res.status(201).json(result);
-    } else {
-      res.status(400).json(result);
-    }
+static async addExam(req, res) {
+  const schoolId = req.user?.schoolId;
+  if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+    return res.status(403).json({ error: 'Forbidden' });
   }
 
-  static async deleteExam(req, res) {
-    const schoolId = req.user?.schoolId;
-    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
+  const { studentId } = req.params;
+  const examData = req.body;
 
-    const { studentId, examId } = req.params;
-    const result = await StudentModel.deleteExam(schoolId, studentId, examId);
+  if (!examData.examType || !examData.examType.trim()) {
+    return res.status(400).json({ success: false, error: 'examType is required' });
+  }
 
-    if (result.success) {
-      res.json({ success: true, message: 'Exam deleted' });
-    } else {
-      res.status(400).json(result);
-    }
+  const result = await StudentModel.addExam(schoolId, studentId, examData);
+  if (result.success) {
+    res.status(201).json(result);
+  } else {
+    res.status(400).json(result);
   }
-  
-  static async updateMarks(req, res) {
-    const schoolId = req.user?.schoolId;
-    if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-    const { studentId } = req.params;
-    const result = await StudentModel.updateMarks(schoolId, studentId, req.body);
-    res.json(result);
+}
+
+static async deleteExam(req, res) {
+  const schoolId = req.user?.schoolId;
+  if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+    return res.status(403).json({ error: 'Forbidden' });
   }
+
+  const { studentId, examId } = req.params;
+  const result = await StudentModel.deleteExam(schoolId, studentId, examId);
+
+  if (result.success) {
+    res.json({ success: true, message: 'Exam deleted' });
+  } else {
+    res.status(400).json(result);
+  }
+}
+
+static async updateMarks(req, res) {
+  const schoolId = req.user?.schoolId;
+  if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const { studentId } = req.params;
+  const result = await StudentModel.updateMarks(schoolId, studentId, req.body);
+
+  if (result.success) {
+    return res.json(result);
+  }
+  return res.status(400).json(result);
+}
 
   /**
    * Search students by multiple criteria
@@ -426,6 +433,66 @@ class StudentController {
       res.status(500).json({ success: false, error: err.message, exams: [] });
     }
   }
+
+  // ────────────────────────────────────────────────
+// Class Exam: get single exam + edit subjects/marks
+// ────────────────────────────────────────────────
+
+static async getClassExam(req, res) {
+  const schoolId = req.user?.schoolId;
+  if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const { grade, section, examId } = req.params;
+
+  try {
+    const exam = await StudentModel.getClassExam(schoolId, grade, section, examId);
+    if (!exam) {
+      return res.status(404).json({ success: false, error: 'Exam not found' });
+    }
+    res.json({ success: true, exam });
+  } catch (err) {
+    console.error('Get class exam error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+static async updateClassExamDetails(req, res) {
+  const schoolId = req.user?.schoolId;
+  if (!schoolId || (req.user.role !== 'school_admin' && req.user.role !== 'school_user')) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const { grade, section, examId } = req.params;
+  const { subjects, studentMarks } = req.body || {};
+
+  if (!Array.isArray(subjects) || subjects.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'subjects array is required and must not be empty',
+    });
+  }
+
+  try {
+    const result = await StudentModel.updateClassExamDetails(
+      schoolId,
+      grade,
+      section,
+      examId,
+      { subjects, studentMarks }
+    );
+
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (err) {
+    console.error('Update class exam details error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
 
   /**
    * Update student marks for class exam

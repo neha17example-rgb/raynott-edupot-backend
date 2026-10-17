@@ -33,10 +33,14 @@ class BillingModel {
     try {
       const invoiceNumber = await this.generateInvoiceNumber(schoolId);
       const invoiceId = `${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-      
+
       // Calculate total
-      const total = invoiceData.items.reduce((sum, item) => sum + (item.amount * item.quantity), 0);
-      
+      const total = (invoiceData.items || []).reduce(
+        (sum, item) =>
+          sum + (parseFloat(item.amount) || 0) * (parseInt(item.quantity) || 1),
+        0
+      );
+
       const invoice = {
         id: invoiceId,
         invoiceNumber,
@@ -47,10 +51,10 @@ class BillingModel {
         studentSection: invoiceData.studentSection || '',
         studentFather: invoiceData.studentFather || '',
         studentPhone: invoiceData.studentPhone || '',
-        items: invoiceData.items.map(item => ({
+        items: (invoiceData.items || []).map((item) => ({
           description: item.description,
           amount: parseFloat(item.amount) || 0,
-          quantity: parseInt(item.quantity) || 1
+          quantity: parseInt(item.quantity) || 1,
         })),
         total: parseFloat(total) || 0,
         paidAmount: 0,
@@ -59,16 +63,38 @@ class BillingModel {
         dueDate: invoiceData.dueDate || '',
         notes: invoiceData.notes || '',
         date: invoiceData.date || new Date().toISOString().split('T')[0],
+
+        // ⭐ Snapshot of installment state at time of invoice
+        installments: Array.isArray(invoiceData.installments)
+          ? invoiceData.installments.map((i) => ({
+              number: i.number ?? null,
+              amount: Number(i.amount) || 0,
+              paid: Number(i.paid) || 0,
+              status: i.status || 'pending',
+              dueDate: i.dueDate || '',
+              paidDate: i.paidDate || '',
+              paymentMode: i.paymentMode || '',
+              notes: i.notes || '',
+            }))
+          : [],
+
+        // ⭐ Fee summary at time of invoice
+        feeSummary: {
+          totalFees: Number(invoiceData.feeSummary?.totalFees) || 0,
+          totalPaid: Number(invoiceData.feeSummary?.totalPaid) || 0,
+          pendingAmount: Number(invoiceData.feeSummary?.pendingAmount) || 0,
+        },
+
         createdAt: admin.database.ServerValue.TIMESTAMP,
         updatedAt: admin.database.ServerValue.TIMESTAMP,
-        payments: []
+        payments: [],
       };
 
       await rtdb.ref(`${this.INVOICES_REF(schoolId)}/${invoiceId}`).set(invoice);
-      
+
       // Update student's pending amount
       await this.updateStudentPendingAmount(schoolId, invoiceData.studentId);
-      
+
       return { success: true, invoice, invoiceId };
     } catch (error) {
       console.error('Create invoice error:', error);
@@ -85,39 +111,35 @@ class BillingModel {
       if (!snapshot.exists()) return [];
 
       const invoices = [];
-      snapshot.forEach(child => {
+      snapshot.forEach((child) => {
         const invoice = { id: child.key, ...child.val() };
         invoices.push(invoice);
       });
 
       // Apply filters
       let filtered = invoices;
-      
+
       if (filters.studentId) {
-        filtered = filtered.filter(inv => inv.studentId === filters.studentId);
+        filtered = filtered.filter((inv) => inv.studentId === filters.studentId);
       }
-      
       if (filters.status) {
-        filtered = filtered.filter(inv => inv.status === filters.status);
+        filtered = filtered.filter((inv) => inv.status === filters.status);
       }
-      
       if (filters.grade) {
-        filtered = filtered.filter(inv => inv.studentGrade === filters.grade);
+        filtered = filtered.filter((inv) => inv.studentGrade === filters.grade);
       }
-      
       if (filters.section) {
-        filtered = filtered.filter(inv => inv.studentSection === filters.section);
+        filtered = filtered.filter((inv) => inv.studentSection === filters.section);
       }
-      
       if (filters.startDate && filters.endDate) {
-        filtered = filtered.filter(inv => 
-          inv.date >= filters.startDate && inv.date <= filters.endDate
+        filtered = filtered.filter(
+          (inv) => inv.date >= filters.startDate && inv.date <= filters.endDate
         );
       }
 
       // Sort by created date descending
       filtered.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      
+
       return filtered;
     } catch (error) {
       console.error('Get all invoices error:', error);
@@ -130,7 +152,9 @@ class BillingModel {
    */
   static async getInvoice(schoolId, invoiceId) {
     try {
-      const snapshot = await rtdb.ref(`${this.INVOICES_REF(schoolId)}/${invoiceId}`).once('value');
+      const snapshot = await rtdb
+        .ref(`${this.INVOICES_REF(schoolId)}/${invoiceId}`)
+        .once('value');
       if (!snapshot.exists()) return null;
       return { id: invoiceId, ...snapshot.val() };
     } catch (error) {
@@ -144,21 +168,21 @@ class BillingModel {
    */
   static async getInvoicesByStudent(schoolId, studentId) {
     try {
-      const snapshot = await rtdb.ref(this.INVOICES_REF(schoolId))
+      const snapshot = await rtdb
+        .ref(this.INVOICES_REF(schoolId))
         .orderByChild('studentId')
         .equalTo(studentId)
         .once('value');
-      
+
       if (!snapshot.exists()) return [];
-      
+
       const invoices = [];
-      snapshot.forEach(child => {
+      snapshot.forEach((child) => {
         invoices.push({ id: child.key, ...child.val() });
       });
-      
-      // Sort by date descending
+
       invoices.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      
+
       return invoices;
     } catch (error) {
       console.error('Get invoices by student error:', error);
@@ -178,7 +202,7 @@ class BillingModel {
 
       await rtdb.ref(`${this.INVOICES_REF(schoolId)}/${invoiceId}`).update({
         status,
-        updatedAt: admin.database.ServerValue.TIMESTAMP
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
       });
 
       return { success: true };
@@ -195,14 +219,14 @@ class BillingModel {
     try {
       const invoiceRef = rtdb.ref(`${this.INVOICES_REF(schoolId)}/${invoiceId}`);
       const snapshot = await invoiceRef.once('value');
-      
+
       if (!snapshot.exists()) {
         throw new Error('Invoice not found');
       }
 
       const invoice = snapshot.val();
       const paymentId = `${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-      
+
       const payment = {
         id: paymentId,
         invoiceId,
@@ -212,14 +236,13 @@ class BillingModel {
         date: paymentData.date || new Date().toISOString().split('T')[0],
         reference: paymentData.reference || '',
         notes: paymentData.notes || '',
-        createdAt: admin.database.ServerValue.TIMESTAMP
+        createdAt: admin.database.ServerValue.TIMESTAMP,
       };
 
-      // Update invoice
       const payments = [...(invoice.payments || []), payment];
       const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
       const pendingAmount = invoice.total - totalPaid;
-      
+
       let status = 'pending';
       if (pendingAmount <= 0) {
         status = 'paid';
@@ -232,13 +255,10 @@ class BillingModel {
         paidAmount: totalPaid,
         pendingAmount,
         status,
-        updatedAt: admin.database.ServerValue.TIMESTAMP
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
       });
 
-      // Update student's pending amount
       await this.updateStudentPendingAmount(schoolId, invoice.studentId);
-
-      // Also save payment to payments collection
       await rtdb.ref(`${this.PAYMENTS_REF(schoolId)}/${paymentId}`).set(payment);
 
       return { success: true, payment, status };
@@ -254,21 +274,19 @@ class BillingModel {
   static async updateStudentPendingAmount(schoolId, studentId) {
     try {
       const invoices = await this.getInvoicesByStudent(schoolId, studentId);
-      
-      // Calculate total pending from unpaid invoices
+
       const totalPending = invoices
-        .filter(inv => inv.status !== 'cancelled' && inv.status !== 'paid')
+        .filter((inv) => inv.status !== 'cancelled' && inv.status !== 'paid')
         .reduce((sum, inv) => sum + (inv.pendingAmount || 0), 0);
-      
+
       const totalPaid = invoices.reduce((sum, inv) => sum + (inv.paidAmount || 0), 0);
-      
-      // Update student
+
       const studentRef = rtdb.ref(`schools/${schoolId}/students/${studentId}`);
       await studentRef.update({
         pendingAmount: totalPending,
-        totalPaid: totalPaid,
+        totalPaid,
         status: totalPending === 0 ? 'completed' : 'active',
-        updatedAt: admin.database.ServerValue.TIMESTAMP
+        updatedAt: admin.database.ServerValue.TIMESTAMP,
       });
 
       return { success: true };
@@ -289,8 +307,7 @@ class BillingModel {
       }
 
       await rtdb.ref(`${this.INVOICES_REF(schoolId)}/${invoiceId}`).remove();
-      
-      // Update student's pending amount
+
       if (invoice.studentId) {
         await this.updateStudentPendingAmount(schoolId, invoice.studentId);
       }
@@ -307,20 +324,21 @@ class BillingModel {
    */
   static async getPaymentHistory(schoolId, studentId) {
     try {
-      const snapshot = await rtdb.ref(this.PAYMENTS_REF(schoolId))
+      const snapshot = await rtdb
+        .ref(this.PAYMENTS_REF(schoolId))
         .orderByChild('studentId')
         .equalTo(studentId)
         .once('value');
-      
+
       if (!snapshot.exists()) return [];
-      
+
       const payments = [];
-      snapshot.forEach(child => {
+      snapshot.forEach((child) => {
         payments.push({ id: child.key, ...child.val() });
       });
-      
+
       payments.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-      
+
       return payments;
     } catch (error) {
       console.error('Get payment history error:', error);
@@ -334,7 +352,7 @@ class BillingModel {
   static async getStudentBillingSummary(schoolId, studentId) {
     try {
       const invoices = await this.getInvoicesByStudent(schoolId, studentId);
-      
+
       const summary = {
         totalInvoiced: 0,
         totalPaid: 0,
@@ -344,10 +362,10 @@ class BillingModel {
         partialCount: 0,
         pendingCount: 0,
         overdueCount: 0,
-        cancelledCount: 0
+        cancelledCount: 0,
       };
 
-      invoices.forEach(inv => {
+      invoices.forEach((inv) => {
         summary.totalInvoiced += inv.total || 0;
         summary.totalPaid += inv.paidAmount || 0;
         summary.totalPending += inv.pendingAmount || 0;
@@ -374,7 +392,7 @@ class BillingModel {
   static async getClassBillingReport(schoolId, grade, section) {
     try {
       const allInvoices = await this.getAllInvoices(schoolId, { grade, section });
-      
+
       const report = {
         grade,
         section,
@@ -382,12 +400,11 @@ class BillingModel {
         totalInvoiced: 0,
         totalPaid: 0,
         totalPending: 0,
-        students: []
+        students: [],
       };
 
-      // Group by student
       const studentMap = new Map();
-      allInvoices.forEach(inv => {
+      allInvoices.forEach((inv) => {
         const key = inv.studentId;
         if (!studentMap.has(key)) {
           studentMap.set(key, {
@@ -397,10 +414,10 @@ class BillingModel {
             totalInvoiced: 0,
             totalPaid: 0,
             totalPending: 0,
-            invoiceCount: 0
+            invoiceCount: 0,
           });
         }
-        
+
         const student = studentMap.get(key);
         student.totalInvoiced += inv.total || 0;
         student.totalPaid += inv.paidAmount || 0;
@@ -410,9 +427,9 @@ class BillingModel {
 
       report.students = Array.from(studentMap.values());
       report.totalStudents = report.students.length;
-      report.totalInvoiced = report.students.reduce((sum, s) => sum + s.totalInvoiced, 0);
-      report.totalPaid = report.students.reduce((sum, s) => sum + s.totalPaid, 0);
-      report.totalPending = report.students.reduce((sum, s) => sum + s.totalPending, 0);
+      report.totalInvoiced = report.students.reduce((s, x) => s + x.totalInvoiced, 0);
+      report.totalPaid = report.students.reduce((s, x) => s + x.totalPaid, 0);
+      report.totalPending = report.students.reduce((s, x) => s + x.totalPending, 0);
 
       return report;
     } catch (error) {
@@ -427,8 +444,12 @@ class BillingModel {
   static async getBillingStats(schoolId) {
     try {
       const invoices = await this.getAllInvoices(schoolId);
-      const studentsSnapshot = await rtdb.ref(`schools/${schoolId}/students`).once('value');
-      const studentCount = studentsSnapshot.exists() ? studentsSnapshot.numChildren() : 0;
+      const studentsSnapshot = await rtdb
+        .ref(`schools/${schoolId}/students`)
+        .once('value');
+      const studentCount = studentsSnapshot.exists()
+        ? studentsSnapshot.numChildren()
+        : 0;
 
       const stats = {
         totalInvoices: invoices.length,
@@ -441,10 +462,10 @@ class BillingModel {
         overdueCount: 0,
         cancelledCount: 0,
         totalStudents: studentCount,
-        collectionRate: 0
+        collectionRate: 0,
       };
 
-      invoices.forEach(inv => {
+      invoices.forEach((inv) => {
         stats.totalAmount += inv.total || 0;
         stats.totalPaid += inv.paidAmount || 0;
         stats.totalPending += inv.pendingAmount || 0;
@@ -458,9 +479,10 @@ class BillingModel {
         }
       });
 
-      stats.collectionRate = stats.totalAmount > 0 
-        ? Math.round((stats.totalPaid / stats.totalAmount) * 100) 
-        : 0;
+      stats.collectionRate =
+        stats.totalAmount > 0
+          ? Math.round((stats.totalPaid / stats.totalAmount) * 100)
+          : 0;
 
       return stats;
     } catch (error) {
